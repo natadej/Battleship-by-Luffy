@@ -5,8 +5,28 @@
 }
 
 header {
+  position: relative;
   text-align: center;
   margin-bottom: 16px;
+}
+
+.sound-toggle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  background: var(--panel);
+  border: 1px solid #2a4566;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sound-toggle:hover {
+  border-color: var(--accent);
 }
 
 h1 {
@@ -114,14 +134,12 @@ kbd {
 
 .grid {
   --cell: clamp(26px, 4.2vw, 38px);
+  position: relative;
+  isolation: isolate;
   display: grid;
   grid-template-columns: 20px repeat(10, var(--cell));
-  grid-auto-rows: var(--cell);
+  grid-template-rows: 20px repeat(10, var(--cell));
   gap: 2px;
-}
-
-.grid-corner {
-  height: 20px;
 }
 
 .grid-head {
@@ -131,69 +149,344 @@ kbd {
   color: var(--muted);
 }
 
-.grid > .grid-head:nth-child(-n + 11) {
-  height: 20px;
+.grid-col-head {
   align-self: end;
 }
 
+/* Water: one wave pattern shared by every cell (background-attachment: fixed), drifting slowly. */
 .cell {
+  position: relative;
   border: none;
   border-radius: 3px;
-  background: var(--water);
   padding: 0;
-  font-size: 1rem;
-  font-weight: 700;
-  line-height: 1;
-  display: grid;
-  place-items: center;
-  transition: background 0.12s;
+  background-color: var(--water);
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='48'%3E%3Cpath d='M0 12 Q15 4 30 12 T60 12 T90 12 T120 12' fill='none' stroke='%23ffffff' stroke-opacity='.10' stroke-width='2'/%3E%3Cpath d='M-30 36 Q-15 28 0 36 T30 36 T60 36 T90 36 T120 36' fill='none' stroke='%23ffffff' stroke-opacity='.06' stroke-width='2'/%3E%3C/svg%3E"),
+    radial-gradient(circle at 30% 20%, rgba(90, 160, 220, 0.18), transparent 60%);
+  background-size:
+    120px 48px,
+    360px 360px;
+  background-attachment: fixed;
+  animation: waves 9s linear infinite;
+}
+
+@keyframes waves {
+  from {
+    background-position:
+      0 0,
+      0 0;
+  }
+  to {
+    background-position:
+      120px 48px,
+      360px 0;
+  }
 }
 
 .cell:enabled {
   cursor: crosshair;
 }
 
-.cell:enabled:hover:not(.ship) {
-  background: var(--water-hover);
+/* Overlays above ship sprites: highlight (z 3) and shot effects (z 4). No transitions, so the
+   hover highlight snaps from cell to cell instead of trailing behind the pointer. */
+.cell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border-radius: 3px;
+  pointer-events: none;
 }
 
-.cell.ship {
-  background: var(--ship);
+.cell:enabled:hover::after {
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.08);
 }
 
-.cell.miss {
-  color: var(--miss);
-  background: #152f4b;
+.grid-enemy .cell:enabled:hover::after {
+  box-shadow: inset 0 0 0 2px #ffd60a;
+  background:
+    radial-gradient(circle, transparent 0 28%, #ffd60a 30% 36%, transparent 38%),
+    linear-gradient(#ffd60a, #ffd60a) center / 2px 100% no-repeat,
+    linear-gradient(#ffd60a, #ffd60a) center / 100% 2px no-repeat;
+  opacity: 0.9;
 }
 
-.cell.hit {
-  color: #fff;
-  background: var(--hit);
+.cell.last::after {
+  box-shadow: inset 0 0 0 2px #ffd60a;
 }
 
-.cell.sunk {
-  background: var(--sunk);
-  color: #ffb3b6;
+.cell.preview-ok::after,
+.cell.preview-ok:enabled:hover::after {
+  background: rgba(48, 164, 108, 0.8);
+  box-shadow: inset 0 0 0 2px #5fe0a0;
 }
 
-.cell.preview-ok,
-.cell.preview-ok:enabled:hover {
-  background: var(--ok);
-}
-
-.cell.preview-bad,
-.cell.preview-bad:enabled:hover {
-  background: var(--hit);
-}
-
-.cell.last {
-  outline: 2px solid #ffd60a;
-  outline-offset: -2px;
+.cell.preview-bad::after,
+.cell.preview-bad:enabled:hover::after {
+  background: rgba(229, 72, 77, 0.85);
+  box-shadow: inset 0 0 0 2px #ff9a9e;
 }
 
 .cell:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
+}
+
+/* Ships: one sprite spanning its cells, gently bobbing. */
+.ship-sprite {
+  position: relative;
+  z-index: 1;
+  pointer-events: none;
+  display: grid;
+  animation: bob 3.2s ease-in-out infinite;
+}
+
+.ship-sprite svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+@keyframes bob {
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  50% {
+    transform: translate(0, 1.5px) rotate(0.4deg);
+  }
+}
+
+.ship-hull {
+  fill: #7d8da1;
+  stroke: #2b3949;
+  stroke-width: 4;
+}
+
+.ship-deck {
+  fill: #9aabbf;
+}
+
+.ship-shadow {
+  fill: rgba(0, 0, 0, 0.3);
+}
+
+.ship-detail {
+  fill: #5b6a7c;
+}
+
+.ship-turret {
+  fill: #46536a;
+  stroke: #2b3949;
+  stroke-width: 2;
+}
+
+.ship-runway {
+  stroke: #e6edf5;
+  stroke-width: 3;
+  stroke-dasharray: 14 10;
+  opacity: 0.7;
+}
+
+.ship-sprite.sunk {
+  animation: none;
+  filter: grayscale(1) brightness(0.55) sepia(1) hue-rotate(-35deg) saturate(2.5);
+  transform: rotate(-1.5deg);
+}
+
+/* Persistent shot markers (z 2): above ships, below highlights. */
+.mark {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  animation: mark-in 0.25s ease-out 0.35s both;
+}
+
+.mark-hit::before {
+  content: '';
+  width: 58%;
+  height: 58%;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff3b0 0 15%, #ffb02e 35%, #e5484d 65%, rgba(229, 72, 77, 0) 72%);
+  box-shadow: 0 0 10px 2px rgba(255, 120, 40, 0.6);
+  animation: flicker 0.9s ease-in-out infinite alternate;
+}
+
+.mark-miss::before {
+  content: '';
+  width: 26%;
+  height: 26%;
+  border-radius: 50%;
+  background: #dbe9f7;
+  box-shadow: 0 0 0 4px rgba(219, 233, 247, 0.25);
+}
+
+@keyframes mark-in {
+  from {
+    opacity: 0;
+    scale: 0.4;
+  }
+}
+
+@keyframes flicker {
+  from {
+    scale: 0.9;
+    opacity: 0.85;
+  }
+  to {
+    scale: 1.08;
+    opacity: 1;
+  }
+}
+
+/* One-shot effects (z 4). The shell lands at 0.22s, matching IMPACT_DELAY_S in sound.ts. */
+.fx {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+
+.fx > span {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  border-radius: 50%;
+  opacity: 0;
+}
+
+.fx-shell {
+  width: 30%;
+  height: 30%;
+  background: #1b1f27;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.5);
+  animation: shell-drop 0.22s ease-in both;
+}
+
+@keyframes shell-drop {
+  from {
+    opacity: 1;
+    transform: translateY(-160%) scale(1.8);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(0.6);
+  }
+}
+
+.fx-flash {
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle, #fffbe6 0 15%, #ffd166 30%, #ff7a1a 55%, rgba(229, 72, 77, 0) 70%);
+  animation: burst 0.7s ease-out 0.22s both;
+}
+
+.fx-ring {
+  width: 100%;
+  height: 100%;
+  border: 3px solid #ffb02e;
+  animation: ring 0.6s ease-out 0.22s both;
+}
+
+.fx-spark {
+  width: 14%;
+  height: 14%;
+  background: #ffd166;
+  animation: spark 0.6s ease-out 0.22s both;
+}
+
+@keyframes burst {
+  0% {
+    opacity: 1;
+    transform: scale(0.3);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(2.2);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.8);
+  }
+}
+
+@keyframes ring {
+  from {
+    opacity: 1;
+    transform: scale(0.4);
+  }
+  to {
+    opacity: 0;
+    transform: scale(2.6);
+  }
+}
+
+@keyframes spark {
+  from {
+    opacity: 1;
+    transform: rotate(var(--a)) translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: rotate(var(--a)) translateX(260%);
+  }
+}
+
+.fx-ripple {
+  width: 100%;
+  height: 100%;
+  border: 2px solid rgba(219, 233, 247, 0.9);
+  animation: ripple 0.8s ease-out 0.22s both;
+}
+
+.fx-ripple-2 {
+  animation-delay: 0.38s;
+}
+
+.fx-drop {
+  width: 12%;
+  height: 18%;
+  background: #cfe6ff;
+  animation: drop 0.6s ease-out 0.22s both;
+}
+
+@keyframes ripple {
+  from {
+    opacity: 1;
+    transform: scale(0.2);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.9);
+  }
+}
+
+@keyframes drop {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0);
+  }
+  45% {
+    opacity: 1;
+    transform: translate(var(--dx), -260%);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(var(--dx) * 1.6), 40%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cell,
+  .ship-sprite,
+  .mark-hit::before {
+    animation: none;
+  }
 }
 
 .ai-mode {
@@ -269,4 +562,11 @@ kbd {
 
 .log li:first-child {
   color: var(--text);
+}
+
+@media (max-width: 600px) {
+  .sound-toggle {
+    position: static;
+    margin-top: 8px;
+  }
 }
