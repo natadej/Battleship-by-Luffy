@@ -1,0 +1,271 @@
+.app {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 24px 16px 48px;
+}
+
+header {
+  text-align: center;
+  margin-bottom: 16px;
+}
+
+h1 {
+  margin: 0 0 4px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 1.8rem;
+}
+
+h2 {
+  font-size: 1rem;
+  margin: 0 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.status {
+  margin: 0;
+  color: var(--muted);
+  min-height: 1.5em;
+}
+
+.status-player {
+  color: var(--ok);
+  font-weight: 600;
+}
+
+.status-ai {
+  color: var(--hit);
+  font-weight: 600;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.ship-picker,
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
+.controls button {
+  background: var(--panel);
+  border: 1px solid #2a4566;
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.controls button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.controls button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ship-btn.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent) inset;
+}
+
+.ship-btn.placed {
+  color: var(--muted);
+}
+
+.controls .primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #04111f;
+  font-weight: 600;
+}
+
+kbd {
+  font-size: 0.75em;
+  border: 1px solid #3a5577;
+  border-radius: 4px;
+  padding: 0 4px;
+  margin-left: 4px;
+}
+
+.boards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  justify-content: center;
+}
+
+.board-panel {
+  background: var(--panel);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.grid {
+  --cell: clamp(26px, 4.2vw, 38px);
+  display: grid;
+  grid-template-columns: 20px repeat(10, var(--cell));
+  grid-auto-rows: var(--cell);
+  gap: 2px;
+}
+
+.grid-corner {
+  height: 20px;
+}
+
+.grid-head {
+  display: grid;
+  place-items: center;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.grid > .grid-head:nth-child(-n + 11) {
+  height: 20px;
+  align-self: end;
+}
+
+.cell {
+  border: none;
+  border-radius: 3px;
+  background: var(--water);
+  padding: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  transition: background 0.12s;
+}
+
+.cell:enabled {
+  cursor: crosshair;
+}
+
+.cell:enabled:hover {
+  background: var(--water-hover);
+}
+
+.cell.ship {
+  background: var(--ship);
+}
+
+.cell.miss {
+  color: var(--miss);
+  background: #152f4b;
+}
+
+.cell.hit {
+  color: #fff;
+  background: var(--hit);
+}
+
+.cell.sunk {
+  background: var(--sunk);
+  color: #ffb3b6;
+}
+
+.cell.preview-ok {
+  background: var(--ok);
+}
+
+.cell.preview-bad {
+  background: var(--hit);
+  opacity: 0.7;
+}
+
+.cell.last {
+  outline: 2px solid #ffd60a;
+  outline-offset: -2px;
+}
+
+.cell:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.ai-mode {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.ai-hunt {
+  background: #1f3d5f;
+  color: #9cc7ff;
+}
+
+.ai-target {
+  background: #5a1d21;
+  color: #ffb3b6;
+}
+
+.fleet-status {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: 0.8rem;
+  color: var(--muted);
+  max-width: calc(20px + 10 * clamp(26px, 4.2vw, 38px) + 20px);
+}
+
+.fleet-status li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fleet-status .pips {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.fleet-status .pips i {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--ship);
+}
+
+.fleet-status li.sunk {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+
+.fleet-status li.sunk .pips i {
+  background: var(--hit);
+}
+
+.log {
+  max-width: 520px;
+  margin: 24px auto 0;
+  background: var(--panel);
+  border-radius: 12px;
+  padding: 12px 16px;
+}
+
+.log ol {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.log li:first-child {
+  color: var(--text);
+}
