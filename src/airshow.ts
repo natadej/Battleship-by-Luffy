@@ -216,7 +216,7 @@ export class AirShow {
   /**
    * Delivers an aimed shot with the side's own helicopter, B-2 or B-52: the helicopter swoops to the
    * board edge and fires a missile, a bomber makes a run toward the opponent's side and drops on the
-   * square. Resolves at impact, `ms` from now. Returns null when that bomber is already past the square
+   * square. Resolves at impact, `ms` from now. Returns null when that bomber is already past its release point
    * (it never turns back), so the caller can use the cannon instead.
    */
   deliver(by: Delivery, team: Team, board: BoardId, r: number, c: number, ms: number): Promise<void> | null {
@@ -227,22 +227,20 @@ export class AirShow {
     const impact = () => new Promise<void>((resolve) => setTimeout(resolve, ms))
     if (!to || !grid) return impact()
     const flying = this.planes.find((p) => p.team === team && p.kind === by && !p.down)
-    const ahead = (p: Plane) => (p.x - to.x) * forward(team) > 0
-    if (by !== 'heli' && flying && ahead(flying)) return null
+    const dir = { x: forward(team), y: rand(-0.25, 0.25) }
+    const v = SPEED[by] * this.scale() * 2.5
+    const release = { x: to.x - dir.x * v * BOMB_FALL_S * 0.5, y: to.y - dir.y * v * BOMB_FALL_S * 0.5 }
+    if (by !== 'heli' && flying && (flying.x - release.x) * dir.x > 0) return null
     const plane = flying ?? this.newPlane(by, team, t, this.entry(team, to.y))
     plane.born = t
     if (by === 'heli') {
-      const mid = centerOf(grid)
       const fire = Math.max(0.2, hitAt - MISSILE_S)
-      Object.assign(plane, this.heliRoute(board, team, { x: plane.x, y: plane.y }, Math.atan2(to.y - mid.y, to.x - mid.x), fire, rand(10, 16)))
+      Object.assign(plane, this.heliRoute(board, team, { x: plane.x, y: plane.y }, to.y, fire, rand(10, 16)))
       plane.nextFire = t + hitAt + 0.5
       plane.strike = { at: t + fire, to, hit: false, quiet: true, weapon: 'missile' }
       this.sfx('heli', 1, playHelicopter)
     } else {
       const drop = Math.max(0.2, hitAt - BOMB_FALL_S)
-      const dir = { x: forward(team), y: rand(-0.25, 0.25) }
-      const v = SPEED[by] * this.scale() * 2.5
-      const release = { x: to.x - dir.x * v * BOMB_FALL_S * 0.5, y: to.y - dir.y * v * BOMB_FALL_S * 0.5 }
       const from = { x: plane.x, y: plane.y }
       const exitX = team === 'player' ? this.w + 80 : -80
       const out = Math.abs(exitX - release.x) / v
@@ -437,28 +435,35 @@ export class AirShow {
 
   private spawnHeli(team: Team, t: number) {
     const plane = this.newPlane('heli', team, t, this.entry(team))
-    Object.assign(plane, this.heliRoute(targetBoard(team), team, { x: plane.x, y: plane.y }, forward(team) > 0 ? Math.PI : 0, 2.5, rand(14, 20)))
+    Object.assign(plane, this.heliRoute(targetBoard(team), team, { x: plane.x, y: plane.y }, plane.y, 2.5, rand(14, 20)))
     this.sfx('heli', 2, playHelicopter)
   }
 
-  /** Helicopter: flies from `from` to the opponent's board edge at angle th0, circles it, then leaves toward the opponent's side. */
-  private heliRoute(board: BoardId, team: Team, from: Pt, th0: number, enter: number, stay: number): Pick<Plane, 'route' | 'life'> {
-    const omega = rand(0.25, 0.4) * pick([-1, 1])
+  /**
+   * Helicopter: flies from `from` to the near edge of the opponent's board at height `y`, sweeps
+   * slowly across it, then leaves off the far side. It only ever moves toward the opponent.
+   */
+  private heliRoute(board: BoardId, team: Team, from: Pt, y: number, enter: number, stay: number): Pick<Plane, 'route' | 'life'> {
+    const dir = forward(team)
+    const r = gridRect(board)
+    const ahead = (x: number) => (dir > 0 ? Math.max(from.x, x) : Math.min(from.x, x))
+    const nearX = ahead(r ? (dir > 0 ? r.left - 18 : r.right + 18) : this.w / 2)
+    const farX = dir > 0 ? Math.max(nearX, r ? r.right : nearX) : Math.min(nearX, r ? r.left : nearX)
+    const exitX = dir > 0 ? this.w + 80 : -80
+    const sway = (r?.height ?? this.h) * 0.12
+    const bob = rand(0.4, 0.7)
     const leave = 2.5
-    const orbit = (th: number): Pt => {
-      const r = gridRect(board)
-      if (!r) return { x: this.w / 2, y: this.h / 2 }
-      const c = centerOf(r)
-      return { x: c.x + Math.cos(th) * (r.width / 2 + 6), y: c.y + Math.sin(th) * (r.height / 2 + 6) }
-    }
     const ease = (u: number) => u * u * (3 - 2 * u)
-    const exitX = team === 'player' ? this.w + 80 : -80
+    const sweep = (age: number): Pt => {
+      const u = Math.min(1, (age - enter) / stay)
+      return { x: nearX + (farX - nearX) * u, y: y + Math.sin((age - enter) * bob) * sway }
+    }
     return {
       life: enter + stay + leave,
       route: (age) => {
-        if (age < enter) return lerp(from, orbit(th0), ease(age / enter))
-        const p = orbit(th0 + omega * (Math.min(age, enter + stay) - enter))
-        if (age < enter + stay) return p
+        if (age < enter) return lerp(from, { x: nearX, y }, ease(age / enter))
+        if (age < enter + stay) return sweep(age)
+        const p = sweep(enter + stay)
         return lerp(p, { x: exitX, y: p.y }, ease((age - enter - stay) / leave))
       },
     }
