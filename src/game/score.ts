@@ -1,5 +1,5 @@
 import type { Level } from './ai'
-import type { Board } from './board'
+import { type Board, type Coord, sameCoord } from './board'
 
 export interface ShotStats {
   shots: number
@@ -7,11 +7,17 @@ export interface ShotStats {
   accuracy: number
 }
 
-/** Shots fired at a board and how many of them hit. */
-export function statsOf(board: Board): ShotStats {
-  const marks = board.shots.flat()
-  const shots = marks.filter((m) => m !== null).length
-  const hits = marks.filter((m) => m === 'hit').length
+/** Aimed shots fired at a board and how many of them hit; `exclude` drops air-raid squares. */
+export function statsOf(board: Board, exclude: Coord[] = []): ShotStats {
+  let shots = 0
+  let hits = 0
+  board.shots.forEach((row, r) =>
+    row.forEach((m, c) => {
+      if (m === null || exclude.some((e) => sameCoord(e, { r, c }))) return
+      shots++
+      if (m === 'hit') hits++
+    }),
+  )
   return { shots, hits, accuracy: shots ? hits / shots : 0 }
 }
 
