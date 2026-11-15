@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { type AIState, aiMode, chooseShot, createAI, huntCandidates, recordShot, targetCandidates } from './ai'
+import {
+  type AIState,
+  type Level,
+  LEVELS,
+  aiMode,
+  bestProbabilityCells,
+  chooseShot,
+  createAI,
+  huntCandidates,
+  recordShot,
+  targetCandidates,
+} from './ai'
 import { type Board, type Coord, FLEET, allSunk, emptyBoard, fire, placeShip, randomBoard } from './board'
 import { seeded } from './testUtils'
 
@@ -114,5 +125,37 @@ describe('full games', () => {
     console.log(`avg shots to win — hunt/target: ${smartAvg.toFixed(1)}, random: ${randomAvg.toFixed(1)}`)
     expect(smartAvg).toBeLessThan(70)
     expect(randomAvg).toBeGreaterThan(90)
+  })
+})
+
+describe('levels', () => {
+  const average = (level: Level, games = 150) => {
+    const rng = seeded(7)
+    let total = 0
+    for (let g = 0; g < games; g++) total += playOut(randomBoard(rng), (ai) => chooseShot(ai, rng, level))
+    return total / games
+  }
+
+  it('every level finishes games without repeating shots, and gets stronger', () => {
+    const avg = LEVELS.map(({ level }) => average(level))
+    expect(avg[0]).toBeGreaterThan(85) // pure random ≈ 95
+    for (let i = 1; i < avg.length; i++) expect(avg[i]).toBeLessThan(avg[i - 1] + 1)
+    expect(avg[4]).toBeLessThan(avg[3]) // probability beats parity hunt & target
+  })
+
+  it('level 5 aims next to a lone hit', () => {
+    const cruiser = FLEET.find((s) => s.id === 'cruiser')!
+    const board = placeShip(emptyBoard(), cruiser, { r: 4, c: 4 }, 'H')!
+    const { ai } = shoot(createAI(), board, { r: 4, c: 5 })
+    const best = bestProbabilityCells(ai)
+    expect(best.every(({ r, c }) => Math.abs(r - 4) + Math.abs(c - 5) === 1)).toBe(true)
+  })
+
+  it('forgets sunk ships from the remaining fleet', () => {
+    const destroyer = FLEET.find((s) => s.id === 'destroyer')!
+    const board = placeShip(emptyBoard(), destroyer, { r: 0, c: 0 }, 'H')!
+    let s = shoot(createAI(), board, { r: 0, c: 0 })
+    s = shoot(s.ai, s.board, { r: 0, c: 1 })
+    expect(s.ai.remaining).toEqual([5, 4, 3, 3])
   })
 })

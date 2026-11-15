@@ -1,5 +1,5 @@
-import type { CSSProperties } from 'react'
-import { type Board, type Coord, ROWS, SIZE, coordLabel, isSunk, sameCoord } from '../game/board'
+import type { CSSProperties, PointerEvent } from 'react'
+import { type Board, type Coord, type Ship, ROWS, SIZE, coordLabel, isSunk, sameCoord } from '../game/board'
 import { ShipSprite } from './ShipSprite'
 import { ShotFx } from './ShotFx'
 
@@ -14,6 +14,11 @@ interface Props {
   lastShot?: Coord | null
   onCellClick?: (coord: Coord) => void
   onCellHover?: (coord: Coord | null) => void
+  /** 0..1 likelihood per cell, drawn as an orange glow under the water. */
+  heat?: number[][] | null
+  /** Makes visible ships draggable/tappable (placement). */
+  onShipPointerDown?: (ship: Ship, e: PointerEvent<HTMLDivElement>) => void
+  draggingId?: string | null
 }
 
 const range = Array.from({ length: SIZE }, (_, i) => i)
@@ -29,11 +34,15 @@ export function Grid({
   lastShot,
   onCellClick,
   onCellHover,
+  heat,
+  onShipPointerDown,
+  draggingId,
 }: Props) {
   const visibleShips = board.ships.filter((s) => showShips === 'all' || isSunk(board, s))
   return (
     <div
       className={`grid grid-${variant}`}
+      data-board={variant}
       role="grid"
       aria-label={label}
       onMouseLeave={() => onCellHover?.(null)}
@@ -61,18 +70,21 @@ export function Grid({
           if (inPreview) classes.push(preview!.valid ? 'preview-ok' : 'preview-bad')
           if (isLast) classes.push('last')
           const canClick = interactive && !!onCellClick
+          const p = !shot && heat ? heat[r][c] : 0
           return (
             <button
               key={`${r}-${c}`}
               type="button"
               style={at(r + 2, c + 2)}
               className={classes.join(' ')}
+              data-cell={`${r}-${c}`}
               disabled={!canClick}
               aria-label={`${coordLabel(coord)}${shot ? ` ${shot}` : ''}`}
               onClick={() => onCellClick?.(coord)}
               onMouseEnter={() => onCellHover?.(coord)}
               onFocus={() => onCellHover?.(coord)}
             >
+              {p > 0.04 && <span className="heat" style={{ '--p': p.toFixed(2) } as CSSProperties} aria-hidden="true" />}
               {shot && <span className={`mark mark-${shot}`} aria-hidden="true" />}
               {isLast && shot && <ShotFx hit={shot === 'hit'} />}
             </button>
@@ -87,8 +99,9 @@ export function Grid({
         return (
           <div
             key={ship.id}
-            className={`ship-sprite ${sunk ? 'sunk' : ''} ${vertical ? 'vertical' : ''}`}
+            className={`ship-sprite ${sunk ? 'sunk' : ''} ${vertical ? 'vertical' : ''} ${onShipPointerDown ? 'grabbable' : ''} ${draggingId === ship.id ? 'dragging' : ''}`}
             data-ship={ship.id}
+            onPointerDown={onShipPointerDown ? (e) => onShipPointerDown(ship, e) : undefined}
             style={{
               gridRow: vertical ? `${first.r + 2} / span ${ship.length}` : first.r + 2,
               gridColumn: vertical ? first.c + 2 : `${first.c + 2} / span ${ship.length}`,

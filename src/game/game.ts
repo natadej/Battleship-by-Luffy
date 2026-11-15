@@ -1,4 +1,4 @@
-import { type AIState, createAI, recordShot } from './ai'
+import { type AIState, type Level, createAI, recordShot } from './ai'
 import {
   type Board,
   type Coord,
@@ -21,6 +21,7 @@ export interface GameState {
   player: Board
   enemy: Board
   ai: AIState
+  level: Level
   turn: Side
   winner: Side | null
   log: string[]
@@ -30,9 +31,10 @@ export type Action =
   | { type: 'place'; ship: ShipDef; start: Coord; orientation: Orientation }
   | { type: 'remove'; id: string }
   | { type: 'setPlayerBoard'; board: Board }
-  | { type: 'start'; enemy: Board }
+  | { type: 'start'; enemy: Board; level: Level }
   | { type: 'playerFire'; coord: Coord }
   | { type: 'aiFire'; coord: Coord }
+  | { type: 'setLevel'; level: Level }
   | { type: 'reset' }
 
 export const initialState = (): GameState => ({
@@ -40,6 +42,7 @@ export const initialState = (): GameState => ({
   player: emptyBoard(),
   enemy: emptyBoard(),
   ai: createAI(),
+  level: 4,
   turn: 'player',
   winner: null,
   log: [],
@@ -71,7 +74,7 @@ export function reducer(state: GameState, action: Action): GameState {
       return { ...state, player: action.board }
     case 'start':
       if (state.phase !== 'placement' || !fleetPlaced(state.player)) return state
-      return { ...state, phase: 'playing', enemy: action.enemy, turn: 'player', log: ['Battle stations! Your move.'] }
+      return { ...state, phase: 'playing', enemy: action.enemy, level: action.level, turn: 'player', log: ['Battle stations! Your move.'] }
     case 'playerFire': {
       const { coord } = action
       if (state.phase !== 'playing' || state.turn !== 'player') return state
@@ -103,7 +106,9 @@ export function reducer(state: GameState, action: Action): GameState {
         log: [describe('Enemy', coord, result.outcome, result.ship?.name), ...state.log].slice(0, MAX_LOG),
       }
     }
+    case 'setLevel':
+      return state.phase === 'placement' ? { ...state, level: action.level } : state
     case 'reset':
-      return initialState()
+      return { ...initialState(), level: state.level }
   }
 }

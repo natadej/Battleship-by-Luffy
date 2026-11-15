@@ -1,6 +1,6 @@
 # Devin-Battleship
 
-A 10×10 Battleship game in React + TypeScript (Vite), with a Hunt & Target AI opponent.
+A 10×10 Battleship game in React + TypeScript (Vite), with a Hunt & Target AI opponent, five difficulty levels and a local leaderboard.
 
 ```bash
 npm install
@@ -11,7 +11,12 @@ npm run build   # type-check + production build
 
 ## Features
 
-- **Fleet placement** — the 5 standard ships (Carrier 5, Battleship 4, Cruiser 3, Submarine 3, Destroyer 2). Pick a ship, hover for a green/red placement preview, click to place, press <kbd>R</kbd> to rotate. Click a placed ship to pick it back up. Or hit **Randomize**.
+- **Fleet placement** — the 5 standard ships (Carrier 5, Battleship 4, Cruiser 3, Submarine 3, Destroyer 2). Drag a ship from the list (or drag a placed ship) onto the board, with a green/red preview. Tap a placed ship to rotate it in place; **Rotate** / <kbd>R</kbd> sets the orientation for new ships. Or hit **Randomize**. Works with mouse and touch.
+- **Artillery** — every shot takes ~2.5 s: the attacker's cannon slides round the edge of its board, aims, and fires a rocket in an arc onto the target, then the explosion / splash plays.
+- **Five levels** — pick the enemy level before the battle (see below).
+- **Probability shade** — optional orange glow on enemy waters where a ship is most likely, computed only from shots fired so far (never from hidden positions). Using it halves the score.
+- **Score & leaderboard** — score = (accuracy × 1000 + 500 if you win) × level, halved if the shade was used. Save it under your name; the top 20 are ranked by score, then accuracy, in this browser's `localStorage`.
+- **Phones** — landscape layout with both boards side by side; portrait shows a "turn your phone" screen (Android can go fullscreen and lock landscape).
 - **Enemy board** — ships hidden; click to fire. Hits (✕), misses (•), and sunk ships are marked. The last shot on each board is outlined.
 - **Hunt & Target AI** — the badge on your board shows which mode the AI is in.
 - Fleet status, battle log, win/lose detection, play again.
@@ -24,16 +29,30 @@ The AI only sees what a human opponent would: miss / hit / "you sank my X".
 - **Target:** after a hit, fire at the unknown N/S/E/W neighbours. Once two hits line up, the orientation is known, so it only extends along that line (both ends).
 - **Sunk:** when a ship is announced sunk, its hits are retired. Any other unresolved hits (e.g. an adjacent ship hit while chasing the first) keep the AI in Target mode; otherwise it returns to Hunt.
 
-Measured over 300 simulated games (`npm test`): **~51 shots** to win on average vs **~95** for purely random guessing.
+### Levels
+
+| Level | Strategy | Avg shots to win* |
+|---|---|---|
+| 1 Recruit | Random | ~95 |
+| 2 Sailor | Random hunt, tries neighbours after a hit | ~62 |
+| 3 Officer | Hunt & Target (follows the line of hits) | ~62 |
+| 4 Captain | Hunt & Target + checkerboard hunt | ~52 |
+| 5 Admiral | Probability density: scores every cell by how many ways the remaining ships could cover it (placements through open hits weighted heavily) and fires at the max | ~45 |
+
+\*300 simulated games each; `src/game/ai.test.ts` checks that each level is at least as strong as the one below.
 
 ## Structure
 
 ```
 src/game/board.ts   board model, placement, firing (pure functions)
-src/game/ai.ts      Hunt & Target AI (pure functions)
-src/game/game.ts    game reducer: phases, turns, win detection
-src/components/     Grid and FleetStatus UI
-src/App.tsx         wiring, placement UX, AI turn timing
+src/game/ai.ts           AI levels 1–5 (pure functions)
+src/game/probability.ts  ship-placement probability map (level 5 + shade)
+src/game/score.ts        accuracy and score
+src/game/game.ts         game reducer: phases, turns, win detection
+src/artillery.ts         cannon + rocket animation (Web Animations API)
+src/leaderboard.ts       localStorage leaderboard
+src/components/          Grid, Cannon, FleetStatus, Leaderboard UI
+src/App.tsx              wiring, drag & drop, turn timing
 ```
 
 Game logic is framework-free and immutable, so it's unit-tested directly without rendering React.
