@@ -22,6 +22,12 @@ export type Team = 'player' | 'enemy'
 type Kind = 'heli' | 'gripen' | 'b2' | 'b52'
 type BoardId = 'own' | 'enemy'
 
+/** Aircraft that can deliver a player's or the AI's aimed shot instead of the cannon. */
+export type Delivery = 'heli' | 'gripen' | 'b2'
+export const DELIVERIES: Delivery[] = ['heli', 'gripen', 'b2']
+const BOMB_FALL_S = 0.6
+const MISSILE_S = 0.45
+
 export interface StrikeTarget {
   board: BoardId
   r: number
@@ -42,7 +48,8 @@ interface Plane {
   nextFire: number
   /** Air-raid strike jet: can be shot down but doesn't count toward FLEET. */
   raider?: boolean
-  strike?: { at: number; to: Pt; hit: boolean; dropped?: boolean }
+  /** Release a weapon at `to` at time `at`. `quiet` skips the impact effect (the board plays its own). */
+  strike?: { at: number; to: Pt; hit: boolean; dropped?: boolean; quiet?: boolean; weapon?: 'bomb' | 'missile' }
   down?: { at: number; vx: number; vy: number; spin: number }
 }
 
@@ -206,6 +213,73 @@ export class AirShow {
     for (const g of this.guns) g.ammo = MG_AMMO
   }
 
+  /**
+   * Delivers an aimed shot by air: a helicopter swoops in and fires a missile, a Gripen makes a bomb
+   * run, or a B-2 formation drops its bombs together on the square. Resolves at impact, `ms` from now.
+   */
+  deliver(by: Delivery, team: Team, board: BoardId, r: number, c: number, ms: number): Promise<void> {
+    const t = this.now()
+    const hitAt = ms / 1000
+    const to = cellCenter(board, r, c)
+    const grid = gridRect(board)
+    if (!to || !grid) return new Promise((resolve) => setTimeout(resolve, ms))
+    const scale = this.scale()
+    const a = rand(0, Math.PI * 2)
+    const dir = { x: Math.cos(a), y: Math.sin(a) }
+    if (by === 'heli') {
+      const mid = centerOf(grid)
+      const out = Math.atan2(to.y - mid.y, to.x - mid.x)
+      const reach = Math.max(grid.width, grid.height) / 2 + 40 * scale
+      const hover = { x: mid.x + Math.cos(out) * reach, y: mid.y + Math.sin(out) * reach }
+      const from = { x: hover.x + Math.cos(out) * 500 * scale, y: hover.y + Math.sin(out) * 500 * scale }
+      const fire = hitAt - MISSILE_S
+      const ease = (u: number) => u * u * (3 - 2 * u)
+      this.planes.push({
+        kind: 'heli',
+        team,
+        born: t,
+        life: hitAt + 1.6,
+        route: (age) =>
+          age < fire ? lerp(from, hover, ease(age / fire)) : age < hitAt + 0.3 ? hover : lerp(hover, from, ease((age - hitAt - 0.3) / 1.3)),
+        ...from,
+        heading: out + Math.PI,
+        hp: HP.heli,
+        nextFire: Infinity,
+        raider: true,
+        strike: { at: t + fire, to, hit: false, quiet: true, weapon: 'missile' },
+      })
+      this.sfx('heli', 1, playHelicopter)
+    } else {
+      const wing = by === 'b2' ? [0, -1, 1] : [0]
+      const v = (by === 'b2' ? 380 : 560) * scale
+      const drop = hitAt - BOMB_FALL_S
+      const release = { x: to.x - dir.x * v * BOMB_FALL_S * 0.5, y: to.y - dir.y * v * BOMB_FALL_S * 0.5 }
+      const side = { x: -dir.y, y: dir.x }
+      const gap = 40 * scale
+      for (const k of wing) {
+        const off = { x: side.x * k * gap - dir.x * Math.abs(k) * gap * 0.8, y: side.y * k * gap - dir.y * Math.abs(k) * gap * 0.8 }
+        const start = { x: release.x + off.x - dir.x * v * drop, y: release.y + off.y - dir.y * v * drop }
+        const far = Math.hypot(this.w, this.h) + v * drop
+        const finish = { x: start.x + dir.x * far, y: start.y + dir.y * far }
+        this.planes.push({
+          kind: by,
+          team,
+          born: t,
+          life: far / v,
+          route: (age) => lerp(start, finish, (age * v) / far),
+          ...start,
+          heading: a,
+          hp: HP[by],
+          nextFire: Infinity,
+          raider: true,
+          strike: { at: t + drop, to: { x: to.x + rand(-3, 3), y: to.y + rand(-3, 3) }, hit: false, quiet: true },
+        })
+      }
+      this.sfx(by === 'b2' ? 'bomber' : 'jet', 0, by === 'b2' ? playBomber : playJet)
+    }
+    return new Promise((resolve) => setTimeout(resolve, ms))
+  }
+
   /** Air raid: one strike jet per target drops a bomb on it. Resolves after the last impact. */
   strike(targets: StrikeTarget[]): Promise<void> {
     const t = this.now()
@@ -320,17 +394,19 @@ export class AirShow {
       p.y = pos.y
       if (p.strike && !p.strike.dropped && t >= p.strike.at) {
         p.strike.dropped = true
-        const { to, hit } = p.strike
+        const { to, hit, quiet, weapon = 'bomb' } = p.strike
+        if (weapon === 'missile') this.sfx('missile', 0.2, playMissile)
         this.shots.push({
-          kind: 'bomb',
+          kind: weapon,
           from: { x: p.x, y: p.y },
           to,
           t0: t,
-          dur: 0.6,
+          dur: weapon === 'missile' ? MISSILE_S : BOMB_FALL_S,
           hitChance: 0,
           power: 0,
           land: () => {
-            if (hit) {
+            if (quiet) this.puff('smoke', to.x, to.y, 0.8, 8)
+            else if (hit) {
               this.puff('blast', to.x, to.y, 0.9, 30)
               playExplosion(true)
             } else {
