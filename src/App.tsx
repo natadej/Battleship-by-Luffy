@@ -238,14 +238,13 @@ export default function App() {
     dispatch({ type: 'start', enemy: randomBoard(), level })
     setLastAiShot(null)
     setLastPlayerShot(null)
-    setAssisted(false)
+    setAssisted(shade)
     setSubmitted(null)
   }
 
   async function fireAt(coord: Coord) {
     if (turn !== 'player' || inFlight || enemy.shots[coord.r][coord.c]) return
     unlockAudio()
-    if (shade) setAssisted(true)
     setInFlight('player')
     await launch('player', coord)
     playShotSound(enemy, coord)
@@ -259,6 +258,12 @@ export default function App() {
     setSelectedId(FLEET[0].id)
     setLastAiShot(null)
     setLastPlayerShot(null)
+  }
+
+  /** Seeing the shade at any point in a battle counts as assisted, even if it's turned off again. */
+  function toggleShade() {
+    if (!shade) setAssisted(true)
+    setShade(!shade)
   }
 
   function toggleSound() {
@@ -478,7 +483,7 @@ export default function App() {
                   className={`shade-toggle ${shade ? 'on' : ''}`}
                   aria-pressed={shade}
                   title="Orange glow where enemy ships are most likely, from the shots so far. Halves your score."
-                  onClick={() => setShade((s) => !s)}
+                  onClick={toggleShade}
                 >
                   Probability shade {shade ? 'on' : 'off'}
                 </button>

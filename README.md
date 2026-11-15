@@ -14,7 +14,7 @@ npm run build   # type-check + production build
 - **Fleet placement** — the 5 standard ships (Carrier 5, Battleship 4, Cruiser 3, Submarine 3, Destroyer 2). Drag a ship from the list (or drag a placed ship) onto the board, with a green/red preview. Tap a placed ship to rotate it in place; **Rotate** / <kbd>R</kbd> sets the orientation for new ships. Or hit **Randomize**. Works with mouse and touch.
 - **Artillery** — every shot takes ~2.5 s: the attacker's cannon slides round the edge of its board, aims, and fires a rocket in an arc onto the target, then the explosion / splash plays.
 - **Five levels** — pick the enemy level before the battle (see below).
-- **Probability shade** — optional orange glow on enemy waters where a ship is most likely, computed only from shots fired so far (never from hidden positions). Using it halves the score.
+- **Probability shade** — optional orange glow on enemy waters where a ship is most likely, computed only from shots fired so far (never from hidden positions). Turning it on at any point in a battle halves that game's score.
 - **Score & leaderboard** — score = (accuracy × 1000 + 500 if you win) × level, halved if the shade was used. Save it under your name; the top 20 are ranked by score, then accuracy, in this browser's `localStorage`.
 - **Phones** — landscape layout with both boards side by side; portrait shows a "turn your phone" screen (Android can go fullscreen and lock landscape).
 - **Enemy board** — ships hidden; click to fire. Hits (✕), misses (•), and sunk ships are marked. The last shot on each board is outlined.
