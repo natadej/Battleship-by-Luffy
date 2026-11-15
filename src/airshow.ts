@@ -40,6 +40,8 @@ interface Plane {
   heading: number
   hp: number
   nextFire: number
+  /** Air-raid strike jet: can be shot down but doesn't count toward FLEET. */
+  raider?: boolean
   strike?: { at: number; to: Pt; hit: boolean; dropped?: boolean }
   down?: { at: number; vx: number; vy: number; spin: number }
 }
@@ -98,6 +100,8 @@ const HP: Record<Kind, number> = { heli: 10, gripen: 6, b2: 3, b52: 8 }
 /** Aircraft each side keeps in the air. */
 const FLEET = { heli: 3, planes: 3, b52: 2 }
 const MG_AMMO = 20
+/** Seconds a shot-down aircraft falls before it hits the water. */
+const CRASH_S = 1.6
 const GUN_HP = 3
 const NAMES: Record<Kind, string> = { heli: 'HELICOPTER', gripen: 'GRIPEN', b2: 'B-2', b52: 'B-52' }
 /** How long the big-screen replay of a shoot-down stays up. */
@@ -228,8 +232,9 @@ export class AirShow {
         route: (age) => lerp(start, finish, (age * v) / far),
         ...start,
         heading: a,
-        hp: Infinity,
+        hp: HP.gripen,
         nextFire: Infinity,
+        raider: true,
         strike: { at: t + approach, to, hit: tg.hit },
       })
       end = Math.max(end, approach + fall)
@@ -295,10 +300,9 @@ export class AirShow {
         p.y += p.down.vy * dt
         p.heading += p.down.spin * dt
         if (Math.random() < 0.6) this.puff('smoke', p.x, p.y, 0.9, 6)
-        if (k > 1.6) {
+        if (k > CRASH_S) {
           this.puff('blast', p.x, p.y, 0.6, 18)
           this.puff('splash', p.x, p.y, 0.8, 16)
-          p.life = 0
         }
         continue
       }
@@ -339,7 +343,8 @@ export class AirShow {
       }
       if (t >= p.nextFire && this.onScreen(p)) this.planeFire(p, t)
     }
-    this.planes = this.planes.filter((p) => p.down || t - p.born < p.life)
+    // Crashed aircraft are removed the frame they hit the water.
+    this.planes = this.planes.filter((p) => (p.down ? t - p.down.at <= CRASH_S : t - p.born < p.life))
 
     for (const s of this.shots) {
       if (s.kind === 'missile' && s.target && !s.target.down) s.to = { x: s.target.x, y: s.target.y }
@@ -354,7 +359,7 @@ export class AirShow {
     this.shots = this.shots.filter((s) => t - s.t0 < s.dur)
     for (const s of done) {
       s.land?.()
-      if (s.target && !s.target.down && s.target.hp !== Infinity && Math.random() < s.hitChance) this.damage(s.target, t, s.power)
+      if (s.target && !s.target.down && Math.random() < s.hitChance) this.damage(s.target, t, s.power)
       else if (s.gun && !s.gun.downUntil && Math.random() < s.hitChance) this.damageGun(s.gun, t)
       else if (!s.land) this.puff(s.kind === 'tracer' ? 'flak' : 'blast', s.to.x, s.to.y, 0.35, s.kind === 'tracer' ? 5 : 12)
     }
@@ -364,7 +369,7 @@ export class AirShow {
   private spawn(t: number) {
     const slow = this.calm ? 2 : 1
     for (const team of ['player', 'enemy'] as Team[]) {
-      const live = (...kinds: Kind[]) => this.planes.filter((p) => p.team === team && !p.down && p.hp !== Infinity && kinds.includes(p.kind)).length
+      const live = (...kinds: Kind[]) => this.planes.filter((p) => p.team === team && !p.down && !p.raider && kinds.includes(p.kind)).length
       const due = (key: string, gap: number) => {
         if (t < this.next[`${key}-${team}`]) return false
         this.next[`${key}-${team}`] = t + gap * slow
@@ -454,7 +459,7 @@ export class AirShow {
 
   /** Live, on-screen enemy aircraft: helicopters or everything else. */
   private foePlanes(team: Team, helis: boolean): Plane[] {
-    return this.planes.filter((p) => p.team !== team && !p.down && p.hp !== Infinity && this.onScreen(p) && (p.kind === 'heli') === helis)
+    return this.planes.filter((p) => p.team !== team && !p.down && this.onScreen(p) && (p.kind === 'heli') === helis)
   }
 
   private foeGuns(team: Team): Gun[] {
@@ -697,7 +702,7 @@ export class AirShow {
 
   /** Small health bar above each live aircraft. */
   private drawHealth(p: Plane, s: number) {
-    if (p.down || p.hp === Infinity || !this.onScreen(p)) return
+    if (p.down || !this.onScreen(p)) return
     const { ctx } = this
     const k = Math.max(0, p.hp / HP[p.kind])
     const w = 28 * s
