@@ -183,7 +183,7 @@ export class AirShow {
   private next: Record<string, number> = {}
   private heard: Record<string, number> = {}
   private calm = matchMedia('(prefers-reduced-motion: reduce)').matches
-  private killcam: { plane: Plane; at: number } | null = null
+  private killcam: { team: Team; at: number; plane?: Plane; gun?: Gun } | null = null
   private bubbles: { x: number; y: number; t0: number; dur: number; r: number }[] = []
   private canvas: HTMLCanvasElement
 
@@ -547,8 +547,12 @@ export class AirShow {
     const v = p.kind === 'heli' ? 30 : SPEED[p.kind] * this.scale() * 0.5
     p.down = { at: t, vx: Math.cos(p.heading) * v, vy: Math.sin(p.heading) * v + 20, spin: rand(2, 5) * pick([-1, 1]) }
     this.puff('blast', p.x, p.y, 0.6, 20)
-    if (this.killcam && t - this.killcam.at < KILLCAM_S + 1) return this.sfx('pop', 0.2, playPop)
-    this.killcam = { plane: p, at: t }
+    this.drama({ team: p.team, at: t, plane: p })
+  }
+
+  private drama(cam: NonNullable<AirShow['killcam']>) {
+    if (this.killcam && cam.at - this.killcam.at < KILLCAM_S + 1) return this.sfx('pop', 0.2, playPop)
+    this.killcam = cam
     playKill()
     if (!this.calm)
       document.getElementById('root')?.animate(
@@ -563,7 +567,7 @@ export class AirShow {
     if (g.hp > 0) return
     g.downUntil = t + rand(5, 8)
     this.puff('blast', g.x, g.y, 0.7, 22)
-    this.sfx('pop', 0.2, playPop)
+    this.drama({ team: g.team, at: t, gun: g })
   }
 
   private puff(kind: Fx['kind'], x: number, y: number, dur: number, size: number) {
@@ -624,10 +628,14 @@ export class AirShow {
     }
   }
 
-  /** Big-screen replay of a shoot-down: flash, the aircraft tumbling in flames, and a headline. */
+  /** Replay of a shoot-down over the loser's board: flash, the wreck tumbling in flames, and a headline. */
   private drawKillcam(t: number) {
     const { ctx } = this
-    const { plane, at } = this.killcam!
+    const { plane, gun, team, at } = this.killcam!
+    const area = gridRect(team === 'player' ? 'own' : 'enemy')
+    const zone = area
+      ? { x: area.left, y: area.top, w: area.width, h: area.height }
+      : { x: 0, y: 0, w: this.w, h: this.h }
     const k = (t - at) / KILLCAM_S
     if (k >= 1) {
       this.killcam = null
@@ -635,18 +643,19 @@ export class AirShow {
     }
     if (k < 0.08) {
       ctx.fillStyle = `rgb(255 245 220 / ${0.7 * (1 - k / 0.08)})`
-      ctx.fillRect(0, 0, this.w, this.h)
+      ctx.fillRect(zone.x, zone.y, zone.w, zone.h)
     }
     const pop = Math.min(1, k / 0.1)
     const fade = k > 0.85 ? (1 - k) / 0.15 : 1
-    const bw = Math.min(this.w * 0.46, 440) * (0.7 + 0.3 * pop)
+    const bw = Math.min(zone.w * 0.96, 440) * (0.7 + 0.3 * pop)
     const bh = bw * 0.5
-    const bx = (this.w - bw) / 2
-    const by = Math.max(8, this.h * 0.14)
+    const mid = zone.x + zone.w / 2
+    const bx = mid - bw / 2
+    const by = Math.max(8, zone.y + zone.h * 0.12)
     ctx.save()
     ctx.globalAlpha = fade
     ctx.fillStyle = 'rgb(0 0 0 / 0.35)'
-    ctx.fillRect(0, 0, this.w, this.h)
+    ctx.fillRect(zone.x, zone.y, zone.w, zone.h)
     ctx.beginPath()
     ctx.roundRect(bx, by, bw, bh, 10)
     const sky = ctx.createLinearGradient(0, by, 0, by + bh)
@@ -670,8 +679,14 @@ export class AirShow {
       ctx.arc(cx - bw * back, cy - bh * back * 0.8, r, 0, Math.PI * 2)
       ctx.fill()
     }
-    const ghost = { ...plane, x: cx, y: cy, heading: plane.heading + k * 9, down: undefined }
-    this.drawPlane(ghost, t, bw / 110, false)
+    if (plane) this.drawPlane({ ...plane, x: cx, y: cy, heading: plane.heading + k * 9, down: undefined }, t, bw / 110, false)
+    if (gun) {
+      ctx.save()
+      ctx.translate(cx, cy)
+      ctx.scale(bw / 90 / this.scale(), bw / 90 / this.scale())
+      this.drawGun({ ...gun, x: 0.01, y: 0, aim: gun.aim + k * 9, downUntil: undefined }, t)
+      ctx.restore()
+    }
     const burst = Math.max(0, 1 - Math.abs(k - 0.12) / 0.12)
     if (burst > 0) {
       const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, bw * 0.3 * burst)
@@ -685,20 +700,21 @@ export class AirShow {
     for (let y = by; y < by + bh; y += 4) ctx.fillRect(bx, y, bw, 1)
     ctx.restore()
     ctx.lineWidth = 3
-    ctx.strokeStyle = plane.team === 'enemy' ? '#ffd36b' : '#ff5a3c'
+    ctx.strokeStyle = team === 'enemy' ? '#ffd36b' : '#ff5a3c'
     ctx.stroke()
     ctx.font = `700 ${Math.round(bw / 26)}px system-ui, sans-serif`
     ctx.fillStyle = Math.floor(t * 3) % 2 ? '#ff3b30' : '#ff8a80'
     ctx.fillText('● REPLAY', bx + 10, by + bw / 20)
-    const headline = plane.team === 'enemy' ? `ENEMY ${NAMES[plane.kind]} DESTROYED!` : `OUR ${NAMES[plane.kind]} IS DOWN!`
-    ctx.font = `900 ${Math.round(bw / 13)}px system-ui, sans-serif`
+    const what = plane ? NAMES[plane.kind] : gun?.kind === 'mg' ? 'MACHINE GUN' : 'LAUNCHER'
+    const headline = team === 'enemy' ? `ENEMY ${what} DESTROYED!` : `OUR ${what} IS DOWN!`
+    ctx.font = `900 ${Math.round(bw / 15)}px system-ui, sans-serif`
     ctx.textAlign = 'center'
     ctx.lineWidth = 5
     ctx.strokeStyle = 'rgb(0 0 0 / 0.8)'
     const ty = by + bh + bw / 11
-    ctx.strokeText(headline, this.w / 2, ty)
-    ctx.fillStyle = plane.team === 'enemy' ? '#ffd36b' : '#ff6a50'
-    ctx.fillText(headline, this.w / 2, ty)
+    ctx.strokeText(headline, mid, ty)
+    ctx.fillStyle = team === 'enemy' ? '#ffd36b' : '#ff6a50'
+    ctx.fillText(headline, mid, ty, zone.w)
     ctx.restore()
   }
 
