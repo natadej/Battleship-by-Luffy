@@ -175,7 +175,7 @@ export function playHelicopter() {
   for (let i = 0; i < 14; i++) noiseBurst(ac, ac.currentTime + i * 0.085, 0.06, 'lowpass', 260, i < 3 ? 0.08 * (i + 1) : 0.25)
 }
 
-/** B-52 formation: a deep, detuned engine drone. */
+/** B-2 formation: a deep, detuned engine drone. */
 export function playBomber() {
   const ac = audio()
   if (!ac || muted) return

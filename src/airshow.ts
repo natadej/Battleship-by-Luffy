@@ -1,7 +1,9 @@
-// Air battle around the two boards, drawn on one canvas: jets, helicopters and B-52 formations
-// fly over, machine guns and rocket launchers ride the board edges, and everyone shoots at
-// squares that have already been attacked or at enemy aircraft, which can be shot down.
-// Ambient fire is cosmetic. Real damage only comes from `strike()`, the 10-second air raids.
+// Air battle around the two boards, drawn on one canvas: jets, helicopters and B-2 formations
+// fly over, machine guns and rocket launchers ride the board edges, and each side shoots at the
+// other's aircraft and guns, which can be destroyed.
+// Edge guns aim 50% at enemy planes, 20% at already-attacked squares, 30% at enemy guns and helicopters.
+// Aircraft aim 80% at enemy planes, helicopters and guns, 20% at a random spot on the sea.
+// Ambient fire is cosmetic. Real damage to ships only comes from `strike()`, the 10-second air raids.
 
 import {
   playBomber,
@@ -17,7 +19,7 @@ import {
 
 type Pt = { x: number; y: number }
 export type Team = 'player' | 'enemy'
-type Kind = 'heli' | 'gripen' | 'f14' | 'f16' | 'b52'
+type Kind = 'heli' | 'gripen' | 'f14' | 'f16' | 'b2'
 type BoardId = 'own' | 'enemy'
 
 export interface StrikeTarget {
@@ -50,6 +52,18 @@ interface Gun {
   aim: number
   nextFire: number
   fired: number
+  x: number
+  y: number
+  hp: number
+  /** Destroyed until this time, then a replacement rolls in. */
+  downUntil?: number
+}
+
+/** Where a weapon is pointed, and the aircraft or gun it can damage there. */
+interface Aim {
+  to: Pt
+  plane?: Plane
+  gun?: Gun
 }
 
 interface Shot {
@@ -59,6 +73,7 @@ interface Shot {
   t0: number
   dur: number
   target?: Plane
+  gun?: Gun
   hitChance: number
   land?: () => void
   smoked?: number
@@ -74,8 +89,10 @@ interface Fx {
 }
 
 const JETS: Kind[] = ['gripen', 'f14', 'f16']
-const SPEED: Record<Kind, number> = { heli: 0, gripen: 400, f14: 340, f16: 380, b52: 110 }
-const HP: Record<Kind, number> = { heli: 2, gripen: 2, f14: 2, f16: 2, b52: 3 }
+const SPEED: Record<Kind, number> = { heli: 0, gripen: 400, f14: 340, f16: 380, b2: 120 }
+const HP: Record<Kind, number> = { heli: 3, gripen: 2, f14: 2, f16: 2, b2: 3 }
+const GUN_HP = 3
+const HELIS_PER_SIDE = 2
 const COLORS: Record<Team, { fill: string; line: string }> = {
   player: { fill: '#d6e6f5', line: '#2f6aa8' },
   enemy: { fill: '#f2b3a2', line: '#9a2f20' },
@@ -90,11 +107,8 @@ const SHAPES: Record<Exclude<Kind, 'heli'>, { size: number; parts: number[][]; p
     pods: [-13, -3.4],
   },
   gripen: { size: 0.95, parts: [[15, 0, 8, -1.6, -12, -1.6, -13, 0], [3, -1.6, -10, -9.5, -12, -9.5, -11, -1.6], [9, -1.6, 6, -5, 5, -5, 6, -1.6]] },
-  b52: {
-    size: 1.9,
-    parts: [[18, 0, 14, -1.8, -16, -1.8, -18, 0], [6, -1.8, -4, -21, -7, -21, -2, -1.8], [-14, -1.8, -18, -7, -20, -7, -18, -1.8]],
-    pods: [2, -7, -0.5, -12, -3, -17],
-  },
+  // Flying wing with the sawtooth trailing edge.
+  b2: { size: 1.5, parts: [[14, 0, -5, -26, -9, -24, -4, -17, -10, -10, -5, -5, -9, 0]] },
 }
 
 const rand = (a: number, b: number) => a + Math.random() * (b - a)
@@ -111,6 +125,11 @@ function gridRect(board: BoardId): DOMRect | null {
 function cellCenter(board: BoardId, r: number, c: number): Pt | null {
   const el = document.querySelector(`.grid[data-board="${board}"] [data-cell="${r}-${c}"]`)
   return el ? centerOf(el.getBoundingClientRect()) : null
+}
+
+/** Any square on the board, shot at or not. */
+function seaSpot(board: BoardId): Pt | null {
+  return cellCenter(board, Math.floor(Math.random() * 10), Math.floor(Math.random() * 10))
 }
 
 /** A square that has already been attacked (hits first), or a spot on the board's rim. */
@@ -160,11 +179,11 @@ export class AirShow {
     const t = this.now()
     for (const team of ['player', 'enemy'] as Team[]) {
       for (const [kind, f] of [['mg', 0.1], ['launcher', 0.4], ['mg', 0.7]] as const)
-        this.guns.push({ team, kind, f: f + rand(-0.05, 0.05), v: rand(-0.025, 0.025), aim: 0, nextFire: t + rand(1, 3), fired: 0 })
-      this.next[`heli-${team}`] = t + rand(0.5, 3)
+        this.guns.push({ team, kind, f: f + rand(-0.05, 0.05), v: rand(-0.025, 0.025), aim: 0, nextFire: t + rand(1, 3), fired: 0, x: 0, y: 0, hp: GUN_HP })
+      this.next[`heli-${team}`] = t + rand(0.3, 1.5)
       this.next[`jet-${team}`] = t + rand(1, 4)
     }
-    this.next.b52 = t + rand(5, 9)
+    this.next.b2 = t + rand(5, 9)
     this.raf = requestAnimationFrame(this.frame)
   }
 
@@ -245,6 +264,21 @@ export class AirShow {
     this.spawn(t)
     const rects = { own: gridRect('own'), enemy: gridRect('enemy') }
 
+    for (const g of this.guns) {
+      const r = rects[homeBoard(g.team)]
+      if (!r) continue
+      if (g.downUntil) {
+        if (Math.random() < dt * 4) this.puff('smoke', g.x + rand(-3, 3), g.y, 1.2, 6)
+        if (t < g.downUntil) continue
+        g.downUntil = undefined
+        g.hp = GUN_HP
+      }
+      if (Math.random() < dt * 0.3) g.v = -g.v
+      g.f += g.v * dt
+      Object.assign(g, perimeter(r, g.f, 14))
+      if (t >= g.nextFire) this.gunFire(g, t)
+    }
+
     for (const p of this.planes) {
       if (p.down) {
         const k = t - p.down.at
@@ -297,17 +331,9 @@ export class AirShow {
     }
     this.planes = this.planes.filter((p) => p.down || t - p.born < p.life)
 
-    for (const g of this.guns) {
-      const r = rects[homeBoard(g.team)]
-      if (!r) continue
-      if (Math.random() < dt * 0.3) g.v = -g.v
-      g.f += g.v * dt
-      const pos = perimeter(r, g.f, 14)
-      if (t >= g.nextFire) this.gunFire(g, pos, t)
-    }
-
     for (const s of this.shots) {
       if (s.kind === 'missile' && s.target && !s.target.down) s.to = { x: s.target.x, y: s.target.y }
+      if (s.kind === 'missile' && s.gun && !s.gun.downUntil) s.to = { x: s.gun.x, y: s.gun.y }
       if (s.kind === 'missile' && t - (s.smoked ?? 0) > 0.03) {
         s.smoked = t
         const p = this.shotPos(s, t)
@@ -319,6 +345,7 @@ export class AirShow {
     for (const s of done) {
       s.land?.()
       if (s.target && !s.target.down && s.target.hp !== Infinity && Math.random() < s.hitChance) this.damage(s.target, t)
+      else if (s.gun && !s.gun.downUntil && Math.random() < s.hitChance) this.damageGun(s.gun, t)
       else if (!s.land) this.puff(s.kind === 'tracer' ? 'flak' : 'blast', s.to.x, s.to.y, 0.35, s.kind === 'tracer' ? 5 : 12)
     }
     this.fx = this.fx.filter((f) => t - f.t0 < f.dur)
@@ -328,9 +355,9 @@ export class AirShow {
     const slow = this.calm ? 2 : 1
     for (const team of ['player', 'enemy'] as Team[]) {
       const heliKey = `heli-${team}`
-      if (t >= this.next[heliKey] && !this.planes.some((p) => p.kind === 'heli' && p.team === team)) {
+      if (t >= this.next[heliKey] && this.planes.filter((p) => p.kind === 'heli' && p.team === team && !p.down).length < HELIS_PER_SIDE) {
         this.spawnHeli(team, t)
-        this.next[heliKey] = t + rand(4, 8) * slow
+        this.next[heliKey] = t + rand(2, 5) * slow
       }
       const jetKey = `jet-${team}`
       if (t >= this.next[jetKey]) {
@@ -338,9 +365,9 @@ export class AirShow {
         this.next[jetKey] = t + rand(3, 6) * slow
       }
     }
-    if (t >= this.next.b52) {
+    if (t >= this.next.b2) {
       const team = pick<Team>(['player', 'enemy'])
-      const lead = this.spawnJet('b52', team, t)
+      const lead = this.spawnJet('b2', team, t)
       const back = { x: -Math.cos(lead.heading), y: -Math.sin(lead.heading) }
       const side = { x: -back.y, y: back.x }
       const s = this.scale() * 46
@@ -349,10 +376,10 @@ export class AirShow {
         this.planes.push({ ...lead, route: (age) => {
           const p = lead.route(age)
           return { x: p.x + off.x, y: p.y + off.y }
-        }, hp: HP.b52, nextFire: t + rand(2, 3) })
+        }, hp: HP.b2, nextFire: t + rand(2, 3) })
       }
       this.sfx('bomber', 3, playBomber)
-      this.next.b52 = t + rand(16, 24) * slow
+      this.next.b2 = t + rand(16, 24) * slow
     }
   }
 
@@ -384,14 +411,14 @@ export class AirShow {
       nextFire: t + rand(0.8, 1.6),
     }
     this.planes.push(plane)
-    if (kind !== 'b52') this.sfx('jet', 1.5, playJet)
+    if (kind !== 'b2') this.sfx('jet', 1.5, playJet)
     return plane
   }
 
   private spawnHeli(team: Team, t: number) {
     const board = targetBoard(team)
-    const enter = 3
-    const stay = rand(12, 18)
+    const enter = 2.5
+    const stay = rand(14, 20)
     const omega = rand(0.25, 0.4) * pick([-1, 1])
     const th0 = rand(0, Math.PI * 2)
     const away = { x: Math.cos(th0) * (this.w + this.h), y: Math.sin(th0) * (this.w + this.h) }
@@ -399,7 +426,7 @@ export class AirShow {
       const r = gridRect(board)
       if (!r) return { x: this.w / 2, y: this.h / 2 }
       const c = centerOf(r)
-      return { x: c.x + Math.cos(th) * (r.width / 2 + 26), y: c.y + Math.sin(th) * (r.height / 2 + 26) }
+      return { x: c.x + Math.cos(th) * (r.width / 2 + 6), y: c.y + Math.sin(th) * (r.height / 2 + 6) }
     }
     const ease = (u: number) => u * u * (3 - 2 * u)
     this.planes.push({
@@ -429,69 +456,105 @@ export class AirShow {
 
   private onScreen = (p: Plane) => p.x > -20 && p.y > -20 && p.x < this.w + 20 && p.y < this.h + 20
 
-  private enemyPlaneNear(team: Team, from: Pt, range: number): Plane | undefined {
-    let best: Plane | undefined
-    let bestD = range
-    for (const p of this.planes) {
-      if (p.team === team || p.down || p.hp === Infinity || !this.onScreen(p)) continue
-      const d = Math.hypot(p.x - from.x, p.y - from.y)
-      if (d < bestD) {
-        best = p
-        bestD = d
-      }
-    }
-    return best
+  /** Live, on-screen enemy aircraft: helicopters or everything else. */
+  private foePlanes(team: Team, helis: boolean): Plane[] {
+    return this.planes.filter((p) => p.team !== team && !p.down && p.hp !== Infinity && this.onScreen(p) && (p.kind === 'heli') === helis)
   }
 
+  private foeGuns(team: Team): Gun[] {
+    return this.guns.filter((g) => g.team !== team && !g.downUntil && (g.x || g.y))
+  }
+
+  /** One of the three closest units, so fire spreads out a little. */
+  private aimAt(from: Pt, units: (Plane | Gun)[]): Aim | null {
+    if (!units.length) return null
+    const near = [...units].sort((a, b) => Math.hypot(a.x - from.x, a.y - from.y) - Math.hypot(b.x - from.x, b.y - from.y))
+    const u = pick(near.slice(0, 3))
+    return 'route' in u ? { to: { x: u.x, y: u.y }, plane: u } : { to: { x: u.x, y: u.y }, gun: u }
+  }
+
+  private spotAim = (to: Pt | null): Aim | null => (to ? { to } : null)
+
+  /** Edge guns: 50% enemy planes, 20% already-attacked squares, 30% enemy guns and helicopters. */
+  private gunAim(g: Gun): Aim | null {
+    const roll = Math.random()
+    const units = roll < 0.5 ? this.foePlanes(g.team, false) : roll < 0.7 ? [] : [...this.foeGuns(g.team), ...this.foePlanes(g.team, true)]
+    return this.aimAt(g, units) ?? this.spotAim(attackedSpot(targetBoard(g.team)))
+  }
+
+  /** Aircraft: 80% enemy planes, helicopters and guns (B-2s only bomb guns), 20% a random spot on the sea. */
+  private planeAim(p: Plane): Aim | null {
+    if (Math.random() < 0.8) {
+      const units = p.kind === 'b2' ? this.foeGuns(p.team) : [...this.foePlanes(p.team, false), ...this.foePlanes(p.team, true), ...this.foeGuns(p.team)]
+      const aim = this.aimAt(p, units)
+      if (aim) return aim
+    }
+    return this.spotAim(seaSpot(targetBoard(p.team)))
+  }
+
+  /** Aircraft shoot other aircraft with the machine gun, and bomb or strafe guns and the sea. */
   private planeFire(p: Plane, t: number) {
     const from = { x: p.x, y: p.y }
-    if (p.kind === 'heli') {
-      const spot = attackedSpot(targetBoard(p.team))
-      if (spot) this.burst(from, spot, t, undefined)
-      p.nextFire = t + rand(1.4, 2.8)
-    } else if (p.kind === 'b52') {
-      const spot = attackedSpot(targetBoard(p.team))
-      if (spot) this.shots.push({ kind: 'bomb', from, to: spot, t0: t, dur: 0.8, hitChance: 0 })
-      p.nextFire = t + rand(1.2, 2)
-    } else {
-      const foe = Math.random() < 0.55 ? this.enemyPlaneNear(p.team, from, 520) : undefined
-      const to = foe ? { x: foe.x, y: foe.y } : attackedSpot(targetBoard(p.team))
-      if (to) this.missile(from, to, t, foe, 0.35)
-      p.nextFire = t + rand(1.5, 2.6)
-    }
+    const aim = this.planeAim(p)
+    p.nextFire = t + (p.kind === 'heli' ? rand(1.1, 2.2) : p.kind === 'b2' ? rand(1.2, 2) : rand(1.3, 2.4))
+    if (!aim) return
+    const bomb = !aim.plane && (p.kind === 'b2' || Math.random() < (p.kind === 'heli' ? 0.25 : 0.5))
+    if (bomb) this.bomb(from, aim, t)
+    else this.burst(from, aim, t)
   }
 
-  private gunFire(g: Gun, from: Pt, t: number) {
-    const foe = this.enemyPlaneNear(g.team, from, 460)
-    const to = foe ? { x: foe.x, y: foe.y } : Math.random() < 0.5 ? attackedSpot(targetBoard(g.team)) : null
+  private gunFire(g: Gun, t: number) {
+    const aim = this.gunAim(g)
     g.nextFire = t + (g.kind === 'mg' ? rand(1.2, 2.4) : rand(3, 5))
-    if (!to) return
-    g.aim = Math.atan2(to.y - from.y, to.x - from.x)
+    if (!aim) return
+    g.aim = Math.atan2(aim.to.y - g.y, aim.to.x - g.x)
     g.fired = t
-    if (g.kind === 'mg') this.burst(from, to, t, foe)
-    else this.missile(from, to, t, foe, 0.5)
+    if (g.kind === 'mg') this.burst(g, aim, t)
+    else this.missile({ x: g.x, y: g.y }, aim, t, 0.5)
   }
 
-  private burst(from: Pt, to: Pt, t: number, foe: Plane | undefined) {
-    const d = Math.hypot(to.x - from.x, to.y - from.y)
+  private burst(from: Pt, aim: Aim, t: number) {
+    const start = { x: from.x, y: from.y }
+    const d = Math.hypot(aim.to.x - start.x, aim.to.y - start.y)
+    const spread = aim.plane || aim.gun ? 0 : 6
     for (let i = 0; i < 6; i++) {
-      const spread = foe ? 0 : 6
       this.shots.push({
         kind: 'tracer',
-        from,
-        to: { x: to.x + rand(-spread, spread), y: to.y + rand(-spread, spread) },
+        from: start,
+        to: { x: aim.to.x + rand(-spread, spread), y: aim.to.y + rand(-spread, spread) },
         t0: t + i * 0.07,
         dur: d / 900 + 0.05,
-        target: i === 5 ? foe : undefined,
+        target: i === 5 ? aim.plane : undefined,
+        gun: i === 5 ? aim.gun : undefined,
         hitChance: 0.3,
       })
     }
     this.sfx('mg', 0.35, playMachineGun)
   }
 
-  private missile(from: Pt, to: Pt, t: number, foe: Plane | undefined, hitChance: number) {
+  private bomb(from: Pt, aim: Aim, t: number) {
+    const { to } = aim
+    this.shots.push({
+      kind: 'bomb',
+      from,
+      to,
+      t0: t,
+      dur: 0.75,
+      gun: aim.gun,
+      hitChance: aim.gun ? 0.5 : 0,
+      land: aim.gun
+        ? undefined
+        : () => {
+            this.puff('splash', to.x, to.y, 0.8, 18)
+            this.sfx('splash', 0.8, playSplash)
+          },
+    })
+  }
+
+  private missile(from: Pt, aim: Aim, t: number, hitChance: number) {
+    const { to } = aim
     const d = Math.hypot(to.x - from.x, to.y - from.y)
-    this.shots.push({ kind: 'missile', from, to, t0: t, dur: Math.max(0.4, d / 520), target: foe, hitChance })
+    this.shots.push({ kind: 'missile', from, to, t0: t, dur: Math.max(0.4, d / 520), target: aim.plane, gun: aim.gun, hitChance })
     this.sfx('missile', 0.4, playMissile)
   }
 
@@ -502,6 +565,15 @@ export class AirShow {
     const v = p.kind === 'heli' ? 30 : SPEED[p.kind] * this.scale() * 0.5
     p.down = { at: t, vx: Math.cos(p.heading) * v, vy: Math.sin(p.heading) * v + 20, spin: rand(2, 5) * pick([-1, 1]) }
     this.puff('blast', p.x, p.y, 0.6, 20)
+    this.sfx('pop', 0.2, playPop)
+  }
+
+  private damageGun(g: Gun, t: number) {
+    g.hp -= 1
+    this.puff('flak', g.x, g.y, 0.4, 10)
+    if (g.hp > 0) return
+    g.downUntil = t + rand(5, 8)
+    this.puff('blast', g.x, g.y, 0.7, 22)
     this.sfx('pop', 0.2, playPop)
   }
 
@@ -530,8 +602,8 @@ export class AirShow {
 
   private drawPlane(p: Plane, t: number, s: number, shadow: boolean) {
     const { ctx } = this
-    const size = (p.kind === 'heli' ? 1 : SHAPES[p.kind].size) * s * (p.down ? Math.max(0.4, 1 - (t - p.down.at) / 2) : 1)
-    const alt = p.kind === 'heli' ? 6 : p.kind === 'b52' ? 22 : 14
+    const size = (p.kind === 'heli' ? 1.5 : SHAPES[p.kind].size) * s * (p.down ? Math.max(0.4, 1 - (t - p.down.at) / 2) : 1)
+    const alt = p.kind === 'heli' ? 6 : p.kind === 'b2' ? 22 : 14
     ctx.save()
     ctx.translate(p.x + (shadow ? alt * s : 0), p.y + (shadow ? alt * 1.3 * s : 0))
     ctx.rotate(p.heading)
@@ -541,25 +613,40 @@ export class AirShow {
     ctx.strokeStyle = line
     ctx.lineWidth = 1.2 / size
     if (p.kind === 'heli') {
+      // Fuselage, tail boom and fin; skids, canopy and spinning rotors on top.
       ctx.beginPath()
-      ctx.ellipse(1, 0, 7, 4, 0, 0, Math.PI * 2)
-      ctx.rect(-17, -1, 12, 2)
-      ctx.rect(-18, -4, 2, 8)
+      ctx.ellipse(2, 0, 8, 4.5, 0, 0, Math.PI * 2)
+      ctx.rect(-20, -1.2, 15, 2.4)
+      ctx.rect(-21.5, -4.5, 3, 9)
       ctx.fill()
       if (!shadow) {
         ctx.stroke()
-        ctx.strokeStyle = 'rgb(220 230 240 / 0.7)'
-        ctx.lineWidth = 1.6 / size
-        const a = t * 28
+        ctx.strokeStyle = line
+        ctx.lineWidth = 1.4 / size
         ctx.beginPath()
-        for (const k of [0, Math.PI / 2]) {
-          ctx.moveTo(1 + Math.cos(a + k) * 13, Math.sin(a + k) * 13)
-          ctx.lineTo(1 - Math.cos(a + k) * 13, -Math.sin(a + k) * 13)
+        for (const y of [-5.5, 5.5]) {
+          ctx.moveTo(-5, y)
+          ctx.lineTo(9, y)
         }
         ctx.stroke()
-        ctx.fillStyle = 'rgb(220 230 240 / 0.12)'
+        ctx.fillStyle = 'rgb(140 200 255 / 0.85)'
         ctx.beginPath()
-        ctx.arc(1, 0, 13, 0, Math.PI * 2)
+        ctx.ellipse(6.5, 0, 3, 3, 0, 0, Math.PI * 2)
+        ctx.fill()
+        const a = t * 28
+        ctx.strokeStyle = 'rgb(30 35 45 / 0.85)'
+        ctx.lineWidth = 1.8 / size
+        ctx.beginPath()
+        for (const k of [0, Math.PI / 2]) {
+          ctx.moveTo(1 + Math.cos(a + k) * 16, Math.sin(a + k) * 16)
+          ctx.lineTo(1 - Math.cos(a + k) * 16, -Math.sin(a + k) * 16)
+        }
+        ctx.moveTo(-20 + Math.cos(a * 1.5) * 4, -5 + Math.sin(a * 1.5) * 1.5)
+        ctx.lineTo(-20 - Math.cos(a * 1.5) * 4, -5 - Math.sin(a * 1.5) * 1.5)
+        ctx.stroke()
+        ctx.fillStyle = 'rgb(220 230 240 / 0.15)'
+        ctx.beginPath()
+        ctx.arc(1, 0, 16, 0, Math.PI * 2)
         ctx.fill()
       }
     } else {
@@ -582,25 +669,32 @@ export class AirShow {
             ctx.ellipse(pods[i], pods[i + 1] * m, 2.4, 1, 0, 0, Math.PI * 2)
             ctx.fill()
           }
-        // Afterburner flicker.
-        ctx.fillStyle = `rgb(255 ${150 + Math.random() * 80} 60 / 0.8)`
-        ctx.beginPath()
-        ctx.ellipse(p.kind === 'b52' ? -18 : -15, 0, 2 + Math.random() * 1.5, 1, 0, 0, Math.PI * 2)
-        ctx.fill()
+        // Afterburner flicker (the stealthy B-2 has none).
+        if (p.kind !== 'b2') {
+          ctx.fillStyle = `rgb(255 ${150 + Math.random() * 80} 60 / 0.8)`
+          ctx.beginPath()
+          ctx.ellipse(-15, 0, 2 + Math.random() * 1.5, 1, 0, 0, Math.PI * 2)
+          ctx.fill()
+        }
       }
     }
     ctx.restore()
   }
 
   private drawGun(g: Gun, t: number) {
-    const r = gridRect(homeBoard(g.team))
-    if (!r) return
+    if (!g.x && !g.y) return
     const { ctx } = this
-    const p = perimeter(r, g.f, 14)
     const s = this.scale()
+    if (g.downUntil) {
+      ctx.fillStyle = '#2a2420'
+      ctx.beginPath()
+      ctx.arc(g.x, g.y, 5 * s, 0, Math.PI * 2)
+      ctx.fill()
+      return
+    }
     const { fill, line } = COLORS[g.team]
     ctx.save()
-    ctx.translate(p.x, p.y)
+    ctx.translate(g.x, g.y)
     ctx.fillStyle = line
     ctx.beginPath()
     ctx.arc(0, 0, 6 * s, 0, Math.PI * 2)
