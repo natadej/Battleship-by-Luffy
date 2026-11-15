@@ -5,9 +5,9 @@
 
 import { playLaunch } from './sound'
 
-export const MOVE_MS = 1100
-export const AIM_MS = 250
-export const FLIGHT_MS = 1100
+export const MOVE_MS = 450
+export const AIM_MS = 100
+export const FLIGHT_MS = 700
 /** Total time from click to impact. */
 export const SHOT_MS = MOVE_MS + AIM_MS + FLIGHT_MS
 

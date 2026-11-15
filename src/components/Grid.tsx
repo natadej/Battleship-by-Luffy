@@ -10,6 +10,8 @@ interface Props {
   showShips: 'all' | 'sunk'
   variant?: 'own' | 'enemy'
   interactive?: boolean
+  /** Square tapped early, fired as soon as it's the player's turn. */
+  queued?: Coord | null
   preview?: { cells: Coord[]; valid: boolean } | null
   lastShot?: Coord | null
   onCellClick?: (coord: Coord) => void
@@ -30,6 +32,7 @@ export function Grid({
   showShips,
   variant = 'own',
   interactive,
+  queued,
   preview,
   lastShot,
   onCellClick,
@@ -69,6 +72,7 @@ export function Grid({
           if (shot) classes.push(shot)
           if (inPreview) classes.push(preview!.valid ? 'preview-ok' : 'preview-bad')
           if (isLast) classes.push('last')
+          if (queued && sameCoord(queued, coord)) classes.push('queued')
           const canClick = interactive && !!onCellClick
           const p = !shot && heat ? heat[r][c] : 0
           return (
