@@ -119,34 +119,19 @@ export function playExplosion(big = false) {
   if (big) for (const d of [0.25, 0.5]) thump(ac, t + d, 70, 25, 0.8, 0.6)
 }
 
+/** A heavy shell hitting the sea: a deep impact, a roaring wash of water, then falling spray. */
 export function playSplash() {
   const ac = audio()
   if (!ac || muted) return
   const t = ac.currentTime + IMPACT_DELAY_S
-
-  const src = ac.createBufferSource()
-  src.buffer = noiseBuffer(ac)
-  const bp = ac.createBiquadFilter()
-  bp.type = 'bandpass'
-  bp.frequency.value = 1200
-  bp.Q.value = 0.7
-  src.connect(bp).connect(envelope(ac, t, 0.25, 0.35))
-  src.start(t)
-  src.stop(t + 0.4)
-
-  // Water-drop "bloop": a sine whose pitch sweeps up quickly, plus a smaller second drop.
-  for (const [offset, from, to, peak] of [
-    [0.02, 380, 1300, 0.45],
-    [0.16, 700, 1900, 0.2],
-  ] as const) {
-    const osc = ac.createOscillator()
-    osc.type = 'sine'
-    osc.frequency.setValueAtTime(from, t + offset)
-    osc.frequency.exponentialRampToValueAtTime(to, t + offset + 0.09)
-    osc.connect(envelope(ac, t + offset, peak, 0.16))
-    osc.start(t + offset)
-    osc.stop(t + offset + 0.2)
-  }
+  thump(ac, t, 85, 32, 0.7, 0.9)
+  noiseBurst(ac, t, 0.06, 'lowpass', 1200, 0.7)
+  const wash = noiseBurst(ac, t + 0.02, 1.3, 'lowpass', 2600, 0.75)
+  wash.frequency.exponentialRampToValueAtTime(260, t + 1.3)
+  const spray = noiseBurst(ac, t + 0.15, 0.9, 'bandpass', 3200, 0.3)
+  spray.Q.value = 0.6
+  spray.frequency.exponentialRampToValueAtTime(900, t + 1.05)
+  for (let i = 0; i < 6; i++) noiseBurst(ac, t + 0.45 + Math.random() * 0.6, 0.05, 'highpass', 2500, 0.08)
 }
 
 /** Rocket launch: a short cannon thump followed by a rising whoosh. */
@@ -190,15 +175,21 @@ function noiseBurst(ac: AudioContext, t: number, dur: number, type: BiquadFilter
   return f
 }
 
-/** Machine-gun rattle. */
-export function playMachineGun(rounds = 7) {
+/** Machine-gun burst: per round a sharp muzzle crack, a chesty body and a low kick, with slight
+ * timing and pitch jitter, then a short rumbling echo. */
+export function playMachineGun(rounds = 5) {
   const ac = audio()
   if (!ac || muted) return
+  const t0 = ac.currentTime
   for (let i = 0; i < rounds; i++) {
-    const t = ac.currentTime + i * 0.065
-    noiseBurst(ac, t, 0.05, 'bandpass', 1400, 0.35)
-    thump(ac, t, 160, 60, 0.07, 0.45)
+    const t = t0 + i * 0.09 + Math.random() * 0.012
+    const crack = noiseBurst(ac, t, 0.025, 'highpass', 2800 + Math.random() * 800, 0.55)
+    crack.Q.value = 0.8
+    noiseBurst(ac, t, 0.09, 'bandpass', 700 + Math.random() * 200, 0.5)
+    thump(ac, t, 140 + Math.random() * 30, 55, 0.1, 0.6)
   }
+  const tail = noiseBurst(ac, t0 + rounds * 0.09, 0.6, 'lowpass', 500, 0.25)
+  tail.frequency.exponentialRampToValueAtTime(120, t0 + rounds * 0.09 + 0.6)
 }
 
 /** Missile or rocket leaving the rail. */
@@ -230,7 +221,7 @@ export function playHelicopter() {
   for (let i = 0; i < 14; i++) noiseBurst(ac, ac.currentTime + i * 0.085, 0.06, 'lowpass', 260, i < 3 ? 0.15 * (i + 1) : 0.5)
 }
 
-/** B-2 formation: a deep, detuned engine drone. */
+/** B-52 bombers: a deep, detuned engine drone. */
 export function playBomber() {
   const ac = audio()
   if (!ac || muted) return
@@ -253,29 +244,6 @@ export function playBomber() {
   }
 }
 
-/** Air-raid siren: two rising and falling wails. */
-export function playSiren() {
-  const ac = audio()
-  if (!ac || muted) return
-  const t = ac.currentTime
-  const o = ac.createOscillator()
-  o.type = 'triangle'
-  o.frequency.setValueAtTime(420, t)
-  o.frequency.linearRampToValueAtTime(880, t + 0.5)
-  o.frequency.linearRampToValueAtTime(420, t + 1)
-  o.frequency.linearRampToValueAtTime(880, t + 1.5)
-  o.frequency.linearRampToValueAtTime(420, t + 2)
-  const g = ac.createGain()
-  g.gain.setValueAtTime(0.0001, t)
-  g.gain.exponentialRampToValueAtTime(0.12, t + 0.2)
-  g.gain.setValueAtTime(0.12, t + 1.7)
-  g.gain.exponentialRampToValueAtTime(0.0001, t + 2)
-  o.connect(g).connect(out(ac))
-  o.start(t)
-  o.stop(t + 2.05)
-}
-
-/** Small mid-air explosion: flak or an aircraft going down. */
 export function playPop() {
   const ac = audio()
   if (!ac || muted) return

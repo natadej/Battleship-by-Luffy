@@ -24,7 +24,7 @@ import {
 } from './game/board'
 import { fleetPlaced, initialState, reducer } from './game/game'
 import { knowledgeOf, normalize, probabilityGrid } from './game/probability'
-import { RAID_MS, RAID_SHOTS, healthOf, pickRaidTargets } from './game/raid'
+import { RAID_MS, RAID_SHOTS, healthOf, pickAttacked } from './game/raid'
 import { computeScore, pct, statsOf } from './game/score'
 import { type ScoreEntry, saveName, savedName, submitScore } from './leaderboard'
 import { isMuted, playExplosion, playSplash, setMuted, unlockAudio } from './sound'
@@ -103,8 +103,8 @@ export default function App() {
   useEffect(() => {
     stateRef.current = state
   }, [state])
-  /** Squares with a rocket or bomb on the way, so raids and aimed shots don't pick the same one. */
-  const pending = useRef<{ player: Coord | null; ai: Coord | null; raid: Coord[] }>({ player: null, ai: null, raid: [] })
+  /** Squares with a rocket on the way. */
+  const pending = useRef<{ player: Coord | null; ai: Coord | null }>({ player: null, ai: null })
   const air = useRef<AirShow | null>(null)
   const registerAir = useCallback((show: AirShow | null) => void (air.current = show), [])
   const dragRef = useRef<Drag | null>(null)
@@ -149,38 +149,34 @@ export default function App() {
     // Reads the latest board through stateRef, so air raids don't restart a shot in flight.
   }, [phase, turn, launch])
 
-  // Air raids: every RAID_MS, strike jets bomb RAID_SHOTS random squares on each board.
+  // Air raids: every RAID_MS, strike jets bomb RAID_SHOTS already-attacked squares on each board.
+  // They never touch an unshot square, so only the players' own shots can sink ships.
   useEffect(() => {
     if (phase !== 'playing') return
     let alive = true
-    const inFlight = pending.current
     const tick = setInterval(() => setNow(Date.now()), 250)
     const wave = setInterval(async () => {
       setRaidAt(Date.now() + RAID_MS)
       const s = stateRef.current
-      const { player: aimedEnemy, ai: aimedOwn } = inFlight
-      const enemyTargets = pickRaidTargets(s.enemy, RAID_SHOTS, Math.random, aimedEnemy ? [aimedEnemy] : [])
-      const ownTargets = pickRaidTargets(s.player, RAID_SHOTS, Math.random, aimedOwn ? [aimedOwn] : [])
-      inFlight.raid = enemyTargets
-      setRaiding(true)
       const targets: StrikeTarget[] = [
-        ...enemyTargets.map((c) => ({ board: 'enemy' as const, ...c, hit: !!shipAt(s.enemy, c) })),
-        ...ownTargets.map((c) => ({ board: 'own' as const, ...c, hit: !!shipAt(s.player, c) })),
+        ...pickAttacked(s.enemy, RAID_SHOTS).map((c) => ({ board: 'enemy' as const, ...c, hit: s.enemy.shots[c.r][c.c] === 'hit' })),
+        ...pickAttacked(s.player, RAID_SHOTS).map((c) => ({ board: 'own' as const, ...c, hit: s.player.shots[c.r][c.c] === 'hit' })),
       ]
+      if (!targets.length) return
+      setRaiding(true)
       await (air.current ? air.current.strike(targets) : sleep(1500))
-      inFlight.raid = []
-      if (!alive) return
-      setRaiding(false)
-      dispatch({ type: 'raid', enemy: enemyTargets, player: ownTargets })
+      if (alive) setRaiding(false)
     }, RAID_MS)
     return () => {
       alive = false
       clearInterval(tick)
       clearInterval(wave)
-      inFlight.raid = []
       setRaiding(false)
     }
   }, [phase])
+
+  // Edge machine guns reload at every turn change.
+  useEffect(() => air.current?.reload(), [turn])
 
   // R rotates the ship being placed.
   useEffect(() => {
@@ -323,7 +319,7 @@ export default function App() {
     if (phase !== 'playing' || enemy.shots[coord.r][coord.c]) return
     unlockAudio()
     const busy = turn !== 'player' || inFlight || pending.current.player
-    if (busy || pending.current.raid.some((p) => sameCoord(p, coord))) {
+    if (busy) {
       setQueued((q) => (q && sameCoord(q, coord) ? null : coord))
       return
     }
@@ -490,7 +486,7 @@ export default function App() {
               </button>
             ))}
             <p className="level-hint">
-              {levelInfo.strategy}. Score ×{level}. Air raids hit {RAID_SHOTS} random squares on each board every {RAID_MS / 1000}s.
+              {levelInfo.strategy}. Score ×{level}. Aircraft, guns and air raids only hit squares already attacked: only your shots and the enemy's sink ships.
             </p>
           </div>
           <button type="button" className="primary start-btn" disabled={!fleetPlaced(player)} onClick={start}>
