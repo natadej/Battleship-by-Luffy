@@ -1,5 +1,5 @@
 import { type PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
-import type { AirShow, StrikeTarget } from './airshow'
+import { type AirShow, DELIVERIES, type StrikeTarget } from './airshow'
 import { type Battery, SHOT_MS, fireRocket } from './artillery'
 import { AirBattle } from './components/AirBattle'
 import { Cannon } from './components/Cannon'
@@ -113,10 +113,13 @@ export default function App() {
   const registerPlayer = useCallback((b: Battery | null) => void (batteries.current.player = b), [])
   const registerEnemy = useCallback((b: Battery | null) => void (batteries.current.enemy = b), [])
 
-  /** Animates the attacker's cannon and rocket; resolves on impact. */
+  /** Animates the shot, by the attacker's cannon or (at random) a helicopter, Gripen or B-2 formation; resolves on impact. */
   const launch = useCallback(async (side: 'player' | 'ai', coord: Coord) => {
     const battery = batteries.current[side === 'player' ? 'player' : 'enemy']
     const board = side === 'player' ? 'enemy' : 'own'
+    const by = Math.floor(Math.random() * (DELIVERIES.length + 1))
+    if (air.current && by < DELIVERIES.length)
+      return air.current.deliver(DELIVERIES[by], side === 'player' ? 'player' : 'enemy', board, coord.r, coord.c, SHOT_MS)
     const target = document.querySelector<HTMLElement>(`[data-board="${board}"] [data-cell="${coord.r}-${coord.c}"]`)
     if (!battery || !target || !layerRef.current) return sleep(SHOT_MS)
     return fireRocket(battery, target, layerRef.current)
@@ -297,6 +300,7 @@ export default function App() {
   function start() {
     unlockAudio()
     dispatch({ type: 'start', enemy: randomBoard(), level })
+    setNow(Date.now())
     setRaidAt(Date.now() + RAID_MS)
     setLastAiShot(null)
     setLastPlayerShot(null)
