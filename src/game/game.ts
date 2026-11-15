@@ -46,7 +46,7 @@ export const initialState = (): GameState => ({
   player: emptyBoard(),
   enemy: emptyBoard(),
   ai: createAI(),
-  level: 4,
+  level: 1,
   turn: 'player',
   winner: null,
   log: [],

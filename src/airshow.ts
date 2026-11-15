@@ -1,15 +1,14 @@
-// Air battle around the two boards, drawn on one canvas. Each side keeps 3 helicopters, 3 planes
-// (Gripens and a B-2) and 2 B-52s in the air; machine guns and rocket launchers ride the board edges.
+// Air battle around the two boards, drawn on one canvas. Each side has 1 helicopter, 1 B-2 and 1 B-52,
+// flying only toward the opponent. Bombers never fire on their own: they only bomb the square a player
+// (or the AI) picked, via `deliver()`. Helicopters machine-gun enemy aircraft and guns between deliveries.
 // Edge guns aim 50% at enemy planes, 20% at already-attacked squares, 30% at enemy guns and helicopters.
-// Aircraft aim 80% at enemy planes, helicopters and guns (bombers: random guns), 20% at already-attacked squares.
-// Machine guns carry MG_AMMO rounds per turn (`reload()`). Nothing here can hit an unshot square,
-// so ships are only sunk by the players' own shots.
+// Machine guns carry MG_AMMO rounds, refilled only on the player's turn (`reload()`). Nothing here can hit
+// an unshot square, so ships are only sunk by the players' own shots. Each side has its own colour theme.
 
 import {
   playBomber,
   playExplosion,
   playHelicopter,
-  playJet,
   playKill,
   playMachineGun,
   playMissile,
@@ -23,17 +22,10 @@ type Kind = 'heli' | 'gripen' | 'b2' | 'b52'
 type BoardId = 'own' | 'enemy'
 
 /** Aircraft that can deliver a player's or the AI's aimed shot instead of the cannon. */
-export type Delivery = 'heli' | 'gripen' | 'b2'
-export const DELIVERIES: Delivery[] = ['heli', 'gripen', 'b2']
+export type Delivery = 'heli' | 'b2' | 'b52'
+export const DELIVERIES: Delivery[] = ['heli', 'b2', 'b52']
 const BOMB_FALL_S = 0.6
 const MISSILE_S = 0.45
-
-export interface StrikeTarget {
-  board: BoardId
-  r: number
-  c: number
-  hit: boolean
-}
 
 interface Plane {
   kind: Kind
@@ -46,8 +38,6 @@ interface Plane {
   heading: number
   hp: number
   nextFire: number
-  /** Air-raid strike jet: can be shot down but doesn't count toward FLEET. */
-  raider?: boolean
   /** Release a weapon at `to` at time `at`. `quiet` skips the impact effect (the board plays its own). */
   strike?: { at: number; to: Pt; hit: boolean; dropped?: boolean; quiet?: boolean; weapon?: 'bomb' | 'missile' }
   down?: { at: number; vx: number; vy: number; spin: number }
@@ -85,6 +75,7 @@ interface Shot {
   dur: number
   target?: Plane
   gun?: Gun
+  team: Team
   hitChance: number
   /** Bullets' worth of damage on a hit. */
   power: number
@@ -105,17 +96,22 @@ const SPEED: Record<Kind, number> = { heli: 0, gripen: 330, b2: 110, b52: 95 }
 /** Bullets needed to bring each aircraft down (a missile or bomb counts as 3). */
 const HP: Record<Kind, number> = { heli: 10, gripen: 6, b2: 3, b52: 8 }
 /** Aircraft each side keeps in the air. */
-const FLEET = { heli: 3, planes: 3, b52: 2 }
-const MG_AMMO = 20
+const MG_AMMO = 5
 /** Seconds a shot-down aircraft falls before it hits the water. */
 const CRASH_S = 1.6
 const GUN_HP = 3
 const NAMES: Record<Kind, string> = { heli: 'HELICOPTER', gripen: 'GRIPEN', b2: 'B-2', b52: 'B-52' }
 /** How long the big-screen replay of a shoot-down stays up. */
 const KILLCAM_S = 2.4
+/** Per-side theme for tracers, missiles and bombs: player blue, enemy red. */
+const SHOT_COLORS: Record<Team, { tracer: string; core: string }> = {
+  player: { tracer: '#8fd0ff', core: '#3e9bff' },
+  enemy: { tracer: '#ff9a8a', core: '#ff3b30' },
+}
+
 const COLORS: Record<Team, { fill: string; line: string }> = {
-  player: { fill: '#d6e6f5', line: '#2f6aa8' },
-  enemy: { fill: '#f2b3a2', line: '#9a2f20' },
+  player: { fill: '#a9d2ff', line: '#1f5fb0' },
+  enemy: { fill: '#ffb0a3', line: '#b0281a' },
 }
 
 /** Half outlines (nose pointing +x), mirrored across the x axis. Pods are engine/fuel tank dots. */
@@ -137,6 +133,9 @@ const lerp = (a: Pt, b: Pt, u: number): Pt => ({ x: a.x + (b.x - a.x) * u, y: a.
 const centerOf = (r: DOMRect): Pt => ({ x: r.left + r.width / 2, y: r.top + r.height / 2 })
 const homeBoard = (team: Team): BoardId => (team === 'player' ? 'own' : 'enemy')
 const targetBoard = (team: Team): BoardId => (team === 'player' ? 'enemy' : 'own')
+
+/** +1 if the team flies left to right (player, whose board is on the left), -1 for the enemy. */
+const forward = (team: Team) => (team === 'player' ? 1 : -1)
 
 function gridRect(board: BoardId): DOMRect | null {
   return document.querySelector(`.grid[data-board="${board}"]`)?.getBoundingClientRect() ?? null
@@ -185,6 +184,7 @@ export class AirShow {
   private heard: Record<string, number> = {}
   private calm = matchMedia('(prefers-reduced-motion: reduce)').matches
   private killcam: { plane: Plane; at: number } | null = null
+  private bubbles: { x: number; y: number; t0: number; dur: number; r: number }[] = []
   private canvas: HTMLCanvasElement
 
   constructor(canvas: HTMLCanvasElement) {
@@ -194,10 +194,10 @@ export class AirShow {
     addEventListener('resize', this.resize)
     const t = this.now()
     for (const team of ['player', 'enemy'] as Team[]) {
-      for (const [kind, f] of [['mg', 0.1], ['launcher', 0.4], ['mg', 0.7]] as const)
+      for (const [kind, f] of [['mg', 0.2], ['mg', 0.7]] as const)
         this.guns.push({ team, kind, f: f + rand(-0.05, 0.05), v: rand(-0.025, 0.025), aim: 0, nextFire: t + rand(1, 3), fired: 0, x: 0, y: 0, hp: GUN_HP, ammo: MG_AMMO })
       this.next[`heli-${team}`] = t + rand(0.3, 1.5)
-      this.next[`plane-${team}`] = t + rand(1, 3)
+      this.next[`b2-${team}`] = t + rand(1, 3)
       this.next[`b52-${team}`] = t + rand(3, 6)
     }
     this.raf = requestAnimationFrame(this.frame)
@@ -208,113 +208,53 @@ export class AirShow {
     removeEventListener('resize', this.resize)
   }
 
-  /** New turn: every machine gun gets a fresh MG_AMMO rounds. */
+  /** Player's turn again: every machine gun gets a fresh MG_AMMO rounds. */
   reload() {
     for (const g of this.guns) g.ammo = MG_AMMO
   }
 
   /**
-   * Delivers an aimed shot by air: a helicopter swoops in and fires a missile, a Gripen makes a bomb
-   * run, or a B-2 formation drops its bombs together on the square. Resolves at impact, `ms` from now.
+   * Delivers an aimed shot with the side's own helicopter, B-2 or B-52: the helicopter swoops to the
+   * board edge and fires a missile, a bomber makes a run toward the opponent's side and drops on the
+   * square. Resolves at impact, `ms` from now. Returns null when that bomber is already past the square
+   * (it never turns back), so the caller can use the cannon instead.
    */
-  deliver(by: Delivery, team: Team, board: BoardId, r: number, c: number, ms: number): Promise<void> {
+  deliver(by: Delivery, team: Team, board: BoardId, r: number, c: number, ms: number): Promise<void> | null {
     const t = this.now()
     const hitAt = ms / 1000
     const to = cellCenter(board, r, c)
     const grid = gridRect(board)
-    if (!to || !grid) return new Promise((resolve) => setTimeout(resolve, ms))
-    const scale = this.scale()
-    const a = rand(0, Math.PI * 2)
-    const dir = { x: Math.cos(a), y: Math.sin(a) }
+    const impact = () => new Promise<void>((resolve) => setTimeout(resolve, ms))
+    if (!to || !grid) return impact()
+    const flying = this.planes.find((p) => p.team === team && p.kind === by && !p.down)
+    const ahead = (p: Plane) => (p.x - to.x) * forward(team) > 0
+    if (by !== 'heli' && flying && ahead(flying)) return null
+    const plane = flying ?? this.newPlane(by, team, t, this.entry(team, to.y))
+    plane.born = t
     if (by === 'heli') {
       const mid = centerOf(grid)
-      const out = Math.atan2(to.y - mid.y, to.x - mid.x)
-      const reach = Math.max(grid.width, grid.height) / 2 + 40 * scale
-      const hover = { x: mid.x + Math.cos(out) * reach, y: mid.y + Math.sin(out) * reach }
-      const from = { x: hover.x + Math.cos(out) * 500 * scale, y: hover.y + Math.sin(out) * 500 * scale }
-      const fire = hitAt - MISSILE_S
-      const ease = (u: number) => u * u * (3 - 2 * u)
-      this.planes.push({
-        kind: 'heli',
-        team,
-        born: t,
-        life: hitAt + 1.6,
-        route: (age) =>
-          age < fire ? lerp(from, hover, ease(age / fire)) : age < hitAt + 0.3 ? hover : lerp(hover, from, ease((age - hitAt - 0.3) / 1.3)),
-        ...from,
-        heading: out + Math.PI,
-        hp: HP.heli,
-        nextFire: Infinity,
-        raider: true,
-        strike: { at: t + fire, to, hit: false, quiet: true, weapon: 'missile' },
-      })
+      const fire = Math.max(0.2, hitAt - MISSILE_S)
+      Object.assign(plane, this.heliRoute(board, team, { x: plane.x, y: plane.y }, Math.atan2(to.y - mid.y, to.x - mid.x), fire, rand(10, 16)))
+      plane.nextFire = t + hitAt + 0.5
+      plane.strike = { at: t + fire, to, hit: false, quiet: true, weapon: 'missile' }
       this.sfx('heli', 1, playHelicopter)
     } else {
-      const wing = by === 'b2' ? [0, -1, 1] : [0]
-      const v = (by === 'b2' ? 380 : 560) * scale
-      const drop = hitAt - BOMB_FALL_S
+      const drop = Math.max(0.2, hitAt - BOMB_FALL_S)
+      const dir = { x: forward(team), y: rand(-0.25, 0.25) }
+      const v = SPEED[by] * this.scale() * 2.5
       const release = { x: to.x - dir.x * v * BOMB_FALL_S * 0.5, y: to.y - dir.y * v * BOMB_FALL_S * 0.5 }
-      const side = { x: -dir.y, y: dir.x }
-      const gap = 40 * scale
-      for (const k of wing) {
-        const off = { x: side.x * k * gap - dir.x * Math.abs(k) * gap * 0.8, y: side.y * k * gap - dir.y * Math.abs(k) * gap * 0.8 }
-        const start = { x: release.x + off.x - dir.x * v * drop, y: release.y + off.y - dir.y * v * drop }
-        const far = Math.hypot(this.w, this.h) + v * drop
-        const finish = { x: start.x + dir.x * far, y: start.y + dir.y * far }
-        this.planes.push({
-          kind: by,
-          team,
-          born: t,
-          life: far / v,
-          route: (age) => lerp(start, finish, (age * v) / far),
-          ...start,
-          heading: a,
-          hp: HP[by],
-          nextFire: Infinity,
-          raider: true,
-          strike: { at: t + drop, to: { x: to.x + rand(-3, 3), y: to.y + rand(-3, 3) }, hit: false, quiet: true },
-        })
-      }
-      this.sfx(by === 'b2' ? 'bomber' : 'jet', 0, by === 'b2' ? playBomber : playJet)
+      const from = { x: plane.x, y: plane.y }
+      const exitX = team === 'player' ? this.w + 80 : -80
+      const out = Math.abs(exitX - release.x) / v
+      plane.life = drop + out
+      plane.route = (age) =>
+        age < drop
+          ? lerp(from, release, age / drop)
+          : { x: release.x + dir.x * v * (age - drop), y: release.y + dir.y * v * (age - drop) }
+      plane.strike = { at: t + drop, to: { x: to.x + rand(-3, 3), y: to.y + rand(-3, 3) }, hit: false, quiet: true }
+      this.sfx('bomber', 0, playBomber)
     }
-    return new Promise((resolve) => setTimeout(resolve, ms))
-  }
-
-  /** Air raid: one strike jet per target drops a bomb on it. Resolves after the last impact. */
-  strike(targets: StrikeTarget[]): Promise<void> {
-    const t = this.now()
-    const scale = this.scale()
-    let end = 0.4
-    targets.forEach((tg, i) => {
-      const to = cellCenter(tg.board, tg.r, tg.c)
-      if (!to) return
-      const team = tg.board === 'enemy' ? 'player' : 'enemy'
-      const v = 560 * scale
-      const fall = 0.6
-      const approach = 0.9 + i * 0.2
-      const a = rand(0, Math.PI * 2)
-      const dir = { x: Math.cos(a), y: Math.sin(a) }
-      const release = { x: to.x - dir.x * v * fall * 0.5, y: to.y - dir.y * v * fall * 0.5 }
-      const start = { x: release.x - dir.x * v * approach, y: release.y - dir.y * v * approach }
-      const far = Math.hypot(this.w, this.h) + v * approach
-      const finish = { x: start.x + dir.x * far, y: start.y + dir.y * far }
-      this.planes.push({
-        kind: 'gripen',
-        team,
-        born: t,
-        life: far / v,
-        route: (age) => lerp(start, finish, (age * v) / far),
-        ...start,
-        heading: a,
-        hp: HP.gripen,
-        nextFire: Infinity,
-        raider: true,
-        strike: { at: t + approach, to, hit: tg.hit },
-      })
-      end = Math.max(end, approach + fall)
-    })
-    this.sfx('jet', 0, playJet)
-    return new Promise((resolve) => setTimeout(resolve, end * 1000 + 80))
+    return impact()
   }
 
   private resize = () => {
@@ -398,6 +338,7 @@ export class AirShow {
         if (weapon === 'missile') this.sfx('missile', 0.2, playMissile)
         this.shots.push({
           kind: weapon,
+          team: p.team,
           from: { x: p.x, y: p.y },
           to,
           t0: t,
@@ -445,60 +386,65 @@ export class AirShow {
   private spawn(t: number) {
     const slow = this.calm ? 2 : 1
     for (const team of ['player', 'enemy'] as Team[]) {
-      const live = (...kinds: Kind[]) => this.planes.filter((p) => p.team === team && !p.down && !p.raider && kinds.includes(p.kind)).length
-      const due = (key: string, gap: number) => {
-        if (t < this.next[`${key}-${team}`]) return false
-        this.next[`${key}-${team}`] = t + gap * slow
-        return true
-      }
-      if (live('heli') < FLEET.heli && due('heli', rand(1.5, 3))) this.spawnHeli(team, t)
-      if (live('gripen', 'b2') < FLEET.planes && due('plane', rand(1.5, 3))) this.spawnJet(live('b2') ? 'gripen' : 'b2', team, t)
-      if (live('b52') < FLEET.b52 && due('b52', rand(3, 5))) {
-        this.spawnJet('b52', team, t)
-        this.sfx('bomber', 3, playBomber)
+      for (const kind of ['heli', 'b2', 'b52'] as const) {
+        const live = this.planes.some((p) => p.team === team && !p.down && p.kind === kind)
+        const key = `${kind}-${team}`
+        if (live || t < this.next[key]) continue
+        this.next[key] = t + rand(1.5, 3) * slow
+        if (kind === 'heli') this.spawnHeli(team, t)
+        else this.spawnJet(kind, team, t)
       }
     }
   }
 
-  private spawnJet(kind: Kind, team: Team, t: number): Plane {
-    const c = { x: this.w / 2, y: this.h / 2 }
-    const R = Math.hypot(this.w, this.h) / 2 + 60
-    const a = rand(0, Math.PI * 2)
-    const b = a + Math.PI + rand(-0.6, 0.6)
-    const from = { x: c.x + Math.cos(a) * R, y: c.y + Math.sin(a) * R }
-    const to = { x: c.x + Math.cos(b) * R, y: c.y + Math.sin(b) * R }
-    const len = Math.hypot(to.x - from.x, to.y - from.y)
-    const v = SPEED[kind] * this.scale()
-    const bend = rand(-0.25, 0.25) * len
-    const perp = { x: -(to.y - from.y) / len, y: (to.x - from.x) / len }
+  /** Off-screen point on the team's home side (player: left, enemy: right). */
+  private entry(team: Team, y = rand(0.15, 0.85) * this.h): Pt {
+    return { x: team === 'player' ? -60 : this.w + 60, y }
+  }
+
+  private newPlane(kind: Kind, team: Team, t: number, at: Pt): Plane {
     const plane: Plane = {
       kind,
       team,
       born: t,
-      life: len / v,
-      route: (age) => {
-        const u = (age * v) / len
-        const p = lerp(from, to, u)
-        const k = Math.sin(u * Math.PI) * bend
-        return { x: p.x + perp.x * k, y: p.y + perp.y * k }
-      },
-      ...from,
-      heading: Math.atan2(to.y - from.y, to.x - from.x),
+      life: 1,
+      route: () => at,
+      ...at,
+      heading: forward(team) > 0 ? 0 : Math.PI,
       hp: HP[kind],
-      nextFire: t + rand(0.8, 1.6),
+      nextFire: kind === 'heli' ? t + rand(0.8, 1.6) : Infinity,
     }
     this.planes.push(plane)
-    if (kind === 'gripen') this.sfx('jet', 1.5, playJet)
     return plane
   }
 
+  /** Bomber crossing the sky toward the opponent's side, from one edge to the other. */
+  private spawnJet(kind: Kind, team: Team, t: number) {
+    const from = this.entry(team)
+    const to = { x: team === 'player' ? this.w + 60 : -60, y: Math.min(this.h * 0.9, Math.max(this.h * 0.1, from.y + rand(-0.25, 0.25) * this.h)) }
+    const len = Math.hypot(to.x - from.x, to.y - from.y)
+    const v = SPEED[kind] * this.scale()
+    const bend = rand(-0.12, 0.12) * len
+    const plane = this.newPlane(kind, team, t, from)
+    plane.life = len / v
+    plane.route = (age) => {
+      const u = (age * v) / len
+      const p = lerp(from, to, u)
+      return { x: p.x, y: p.y + Math.sin(u * Math.PI) * bend }
+    }
+    this.sfx('bomber', 3, playBomber)
+  }
+
   private spawnHeli(team: Team, t: number) {
-    const board = targetBoard(team)
-    const enter = 2.5
-    const stay = rand(14, 20)
+    const plane = this.newPlane('heli', team, t, this.entry(team))
+    Object.assign(plane, this.heliRoute(targetBoard(team), team, { x: plane.x, y: plane.y }, forward(team) > 0 ? Math.PI : 0, 2.5, rand(14, 20)))
+    this.sfx('heli', 2, playHelicopter)
+  }
+
+  /** Helicopter: flies from `from` to the opponent's board edge at angle th0, circles it, then leaves toward the opponent's side. */
+  private heliRoute(board: BoardId, team: Team, from: Pt, th0: number, enter: number, stay: number): Pick<Plane, 'route' | 'life'> {
     const omega = rand(0.25, 0.4) * pick([-1, 1])
-    const th0 = rand(0, Math.PI * 2)
-    const away = { x: Math.cos(th0) * (this.w + this.h), y: Math.sin(th0) * (this.w + this.h) }
+    const leave = 2.5
     const orbit = (th: number): Pt => {
       const r = gridRect(board)
       if (!r) return { x: this.w / 2, y: this.h / 2 }
@@ -506,29 +452,16 @@ export class AirShow {
       return { x: c.x + Math.cos(th) * (r.width / 2 + 6), y: c.y + Math.sin(th) * (r.height / 2 + 6) }
     }
     const ease = (u: number) => u * u * (3 - 2 * u)
-    this.planes.push({
-      kind: 'heli',
-      team,
-      born: t,
-      life: enter * 2 + stay,
+    const exitX = team === 'player' ? this.w + 80 : -80
+    return {
+      life: enter + stay + leave,
       route: (age) => {
-        const p = orbit(th0 + omega * age)
-        if (age < enter) {
-          const u = ease(age / enter)
-          return { x: p.x + away.x * (1 - u), y: p.y + away.y * (1 - u) }
-        }
-        if (age > enter + stay) {
-          const u = ease((age - enter - stay) / enter)
-          return { x: p.x - away.y * u, y: p.y + away.x * u }
-        }
-        return p
+        if (age < enter) return lerp(from, orbit(th0), ease(age / enter))
+        const p = orbit(th0 + omega * (Math.min(age, enter + stay) - enter))
+        if (age < enter + stay) return p
+        return lerp(p, { x: exitX, y: p.y }, ease((age - enter - stay) / leave))
       },
-      ...{ x: away.x, y: away.y },
-      heading: 0,
-      hp: HP.heli,
-      nextFire: t + enter + rand(0, 1),
-    })
-    this.sfx('heli', 2, playHelicopter)
+    }
   }
 
   private onScreen = (p: Plane) => p.x > -20 && p.y > -20 && p.x < this.w + 20 && p.y < this.h + 20
@@ -559,33 +492,12 @@ export class AirShow {
     return this.aimAt(g, units) ?? this.spotAim(attackedSpot(targetBoard(g.team)))
   }
 
-  /** Aircraft: 80% enemy planes, helicopters and guns (bombers: a random gun), 20% an already-attacked square. */
-  private planeAim(p: Plane): Aim | null {
-    if (Math.random() < 0.8) {
-      if (p.kind === 'b2' || p.kind === 'b52') {
-        const guns = this.foeGuns(p.team)
-        if (guns.length) {
-          const g = pick(guns)
-          return { to: { x: g.x, y: g.y }, gun: g }
-        }
-      } else {
-        const aim = this.aimAt(p, [...this.foePlanes(p.team, false), ...this.foePlanes(p.team, true), ...this.foeGuns(p.team)])
-        if (aim) return aim
-      }
-    }
-    return this.spotAim(attackedSpot(targetBoard(p.team)))
-  }
-
-  /** Aircraft shoot other aircraft with the machine gun, and bomb or strafe guns and the sea. */
+  /** Helicopters machine-gun enemy aircraft and guns. Bombers only drop on picked squares (`deliver`). */
   private planeFire(p: Plane, t: number) {
-    const from = { x: p.x, y: p.y }
-    const aim = this.planeAim(p)
-    const bomber = p.kind === 'b2' || p.kind === 'b52'
-    p.nextFire = t + (p.kind === 'heli' ? rand(1.1, 2.2) : bomber ? rand(1.4, 2.4) : rand(1.3, 2.4))
-    if (!aim) return
-    const bomb = !aim.plane && (bomber || Math.random() < (p.kind === 'heli' ? 0.25 : 0.5))
-    if (bomb) this.bomb(from, aim, t)
-    else this.burst(from, aim, t)
+    if (p.kind !== 'heli') return void (p.nextFire = Infinity)
+    p.nextFire = t + rand(1.1, 2.2)
+    const aim = this.aimAt(p, [...this.foePlanes(p.team, false), ...this.foePlanes(p.team, true), ...this.foeGuns(p.team)])
+    if (aim) this.burst(p, p.team, aim, t)
   }
 
   private gunFire(g: Gun, t: number) {
@@ -594,18 +506,19 @@ export class AirShow {
     if (!aim || (g.kind === 'mg' && g.ammo <= 0)) return
     g.aim = Math.atan2(aim.to.y - g.y, aim.to.x - g.x)
     g.fired = t
-    if (g.kind === 'mg') g.ammo -= this.burst(g, aim, t, Math.min(5, g.ammo))
-    else this.missile({ x: g.x, y: g.y }, aim, t, 0.5)
+    if (g.kind === 'mg') g.ammo -= this.burst(g, g.team, aim, t, g.ammo)
+    else this.missile({ x: g.x, y: g.y }, g.team, aim, t, 0.5)
   }
 
   /** Fires `rounds` bullets; each one that hits does 1 damage. Returns the rounds used. */
-  private burst(from: Pt, aim: Aim, t: number, rounds = 6): number {
+  private burst(from: Pt, team: Team, aim: Aim, t: number, rounds = 6): number {
     const start = { x: from.x, y: from.y }
     const d = Math.hypot(aim.to.x - start.x, aim.to.y - start.y)
     const spread = aim.plane || aim.gun ? 3 : 6
     for (let i = 0; i < rounds; i++) {
       this.shots.push({
         kind: 'tracer',
+        team,
         from: start,
         to: { x: aim.to.x + rand(-spread, spread), y: aim.to.y + rand(-spread, spread) },
         t0: t + i * 0.07,
@@ -620,30 +533,10 @@ export class AirShow {
     return rounds
   }
 
-  private bomb(from: Pt, aim: Aim, t: number) {
-    const { to } = aim
-    this.shots.push({
-      kind: 'bomb',
-      from,
-      to,
-      t0: t,
-      dur: 0.75,
-      gun: aim.gun,
-      hitChance: aim.gun ? 0.5 : 0,
-      power: 3,
-      land: aim.gun
-        ? undefined
-        : () => {
-            this.puff('splash', to.x, to.y, 0.8, 18)
-            this.sfx('splash', 0.8, playSplash)
-          },
-    })
-  }
-
-  private missile(from: Pt, aim: Aim, t: number, hitChance: number) {
+  private missile(from: Pt, team: Team, aim: Aim, t: number, hitChance: number) {
     const { to } = aim
     const d = Math.hypot(to.x - from.x, to.y - from.y)
-    this.shots.push({ kind: 'missile', from, to, t0: t, dur: Math.max(0.4, d / 520), target: aim.plane, gun: aim.gun, hitChance, power: 3 })
+    this.shots.push({ kind: 'missile', team, from, to, t0: t, dur: Math.max(0.4, d / 520), target: aim.plane, gun: aim.gun, hitChance, power: 3 })
     this.sfx('missile', 0.4, playMissile)
   }
 
@@ -687,6 +580,7 @@ export class AirShow {
   private draw(t: number) {
     const { ctx } = this
     ctx.clearRect(0, 0, this.w, this.h)
+    this.drawBubbles(t)
     for (const f of this.fx) if (f.kind === 'smoke') this.drawFx(f, t)
     for (const g of this.guns) this.drawGun(g, t)
     for (const s of this.shots) if (t >= s.t0) this.drawShot(s, t)
@@ -696,6 +590,38 @@ export class AirShow {
     for (const p of this.planes) this.drawHealth(p, s)
     for (const f of this.fx) if (f.kind !== 'smoke') this.drawFx(f, t)
     if (this.killcam) this.drawKillcam(t)
+  }
+
+  /** Bubbles rising to the surface of both boards and popping. */
+  private drawBubbles(t: number) {
+    const { ctx } = this
+    if (!this.calm && this.bubbles.length < 60)
+      for (const board of ['own', 'enemy'] as BoardId[]) {
+        const r = gridRect(board)
+        if (r && Math.random() < 0.25)
+          this.bubbles.push({ x: rand(r.left, r.right), y: rand(r.top, r.bottom), t0: t, dur: rand(1, 2.2), r: rand(1.2, 3.2) * this.scale() })
+      }
+    this.bubbles = this.bubbles.filter((b) => t - b.t0 < b.dur)
+    ctx.lineWidth = 1
+    for (const b of this.bubbles) {
+      const k = (t - b.t0) / b.dur
+      const y = b.y - k * 8
+      if (k < 0.85) {
+        const r = b.r * (0.5 + k * 0.6)
+        ctx.strokeStyle = `rgb(220 240 255 / ${0.55 * Math.min(1, k * 4)})`
+        ctx.beginPath()
+        ctx.arc(b.x, y, r, 0, Math.PI * 2)
+        ctx.stroke()
+        ctx.fillStyle = 'rgb(255 255 255 / 0.6)'
+        ctx.fillRect(b.x - r * 0.45, y - r * 0.55, r * 0.35, r * 0.35)
+      } else {
+        const u = (k - 0.85) / 0.15
+        ctx.strokeStyle = `rgb(235 248 255 / ${0.6 * (1 - u)})`
+        ctx.beginPath()
+        ctx.arc(b.x, y, b.r * (1 + u * 1.8), 0, Math.PI * 2)
+        ctx.stroke()
+      }
+    }
   }
 
   /** Big-screen replay of a shoot-down: flash, the aircraft tumbling in flames, and a headline. */
@@ -784,8 +710,10 @@ export class AirShow {
     const w = 28 * s
     const x = p.x - w / 2
     const y = p.y - (p.kind === 'heli' ? 30 : p.kind === 'gripen' ? 20 : 34) * s
-    ctx.fillStyle = 'rgb(0 0 0 / 0.6)'
-    ctx.fillRect(x - 1, y - 1, w + 2, 5)
+    ctx.fillStyle = COLORS[p.team].line
+    ctx.fillRect(x - 1.5, y - 1.5, w + 3, 6)
+    ctx.fillStyle = 'rgb(0 0 0 / 0.7)'
+    ctx.fillRect(x, y, w, 3)
     ctx.fillStyle = k > 0.6 ? '#4cd964' : k > 0.3 ? '#ffcc00' : '#ff3b30'
     ctx.fillRect(x, y, w * k, 3)
   }
@@ -918,7 +846,7 @@ export class AirShow {
     const k = this.scale()
     if (s.kind === 'tracer') {
       const a = Math.atan2(s.to.y - s.from.y, s.to.x - s.from.x)
-      ctx.strokeStyle = '#ffe27a'
+      ctx.strokeStyle = SHOT_COLORS[s.team].tracer
       ctx.lineWidth = 1.6 * k
       ctx.beginPath()
       ctx.moveTo(p.x, p.y)
@@ -929,15 +857,15 @@ export class AirShow {
       ctx.beginPath()
       ctx.arc(p.x, p.y, 2.4 * k, 0, Math.PI * 2)
       ctx.fill()
-      ctx.fillStyle = '#ff9a3c'
+      ctx.fillStyle = SHOT_COLORS[s.team].core
       ctx.beginPath()
       ctx.arc(p.x, p.y, 1.3 * k, 0, Math.PI * 2)
       ctx.fill()
     } else {
       const u = Math.min(1, (t - s.t0) / s.dur)
       ctx.fillStyle = '#1b1f24'
-      ctx.strokeStyle = '#e8e8e8'
-      ctx.lineWidth = 1
+      ctx.strokeStyle = SHOT_COLORS[s.team].tracer
+      ctx.lineWidth = 1.5
       ctx.beginPath()
       ctx.arc(p.x, p.y, (4 - u * 2) * k, 0, Math.PI * 2)
       ctx.fill()
