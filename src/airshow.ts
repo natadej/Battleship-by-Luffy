@@ -10,6 +10,7 @@ import {
   playExplosion,
   playHelicopter,
   playJet,
+  playKill,
   playMachineGun,
   playMissile,
   playPop,
@@ -92,6 +93,9 @@ const JETS: Kind[] = ['gripen', 'f14', 'f16']
 const SPEED: Record<Kind, number> = { heli: 0, gripen: 400, f14: 340, f16: 380, b2: 120 }
 const HP: Record<Kind, number> = { heli: 3, gripen: 2, f14: 2, f16: 2, b2: 3 }
 const GUN_HP = 3
+const NAMES: Record<Kind, string> = { heli: 'HELICOPTER', gripen: 'GRIPEN', f14: 'F-14', f16: 'F-16', b2: 'B-2' }
+/** How long the big-screen replay of a shoot-down stays up. */
+const KILLCAM_S = 2.4
 const HELIS_PER_SIDE = 2
 const COLORS: Record<Team, { fill: string; line: string }> = {
   player: { fill: '#d6e6f5', line: '#2f6aa8' },
@@ -169,6 +173,7 @@ export class AirShow {
   private next: Record<string, number> = {}
   private heard: Record<string, number> = {}
   private calm = matchMedia('(prefers-reduced-motion: reduce)').matches
+  private killcam: { plane: Plane; at: number } | null = null
   private canvas: HTMLCanvasElement
 
   constructor(canvas: HTMLCanvasElement) {
@@ -565,7 +570,14 @@ export class AirShow {
     const v = p.kind === 'heli' ? 30 : SPEED[p.kind] * this.scale() * 0.5
     p.down = { at: t, vx: Math.cos(p.heading) * v, vy: Math.sin(p.heading) * v + 20, spin: rand(2, 5) * pick([-1, 1]) }
     this.puff('blast', p.x, p.y, 0.6, 20)
-    this.sfx('pop', 0.2, playPop)
+    if (this.killcam && t - this.killcam.at < KILLCAM_S + 1) return this.sfx('pop', 0.2, playPop)
+    this.killcam = { plane: p, at: t }
+    playKill()
+    if (!this.calm)
+      document.getElementById('root')?.animate(
+        [0, 1, 2, 3, 4, 5, 6].map((i) => ({ transform: i === 6 ? 'none' : `translate(${rand(-9, 9)}px, ${rand(-7, 7)}px)` })),
+        { duration: 500, easing: 'ease-out' },
+      )
   }
 
   private damageGun(g: Gun, t: number) {
@@ -598,6 +610,85 @@ export class AirShow {
     for (const p of this.planes) this.drawPlane(p, t, s, true)
     for (const p of this.planes) this.drawPlane(p, t, s, false)
     for (const f of this.fx) if (f.kind !== 'smoke') this.drawFx(f, t)
+    if (this.killcam) this.drawKillcam(t)
+  }
+
+  /** Big-screen replay of a shoot-down: flash, the aircraft tumbling in flames, and a headline. */
+  private drawKillcam(t: number) {
+    const { ctx } = this
+    const { plane, at } = this.killcam!
+    const k = (t - at) / KILLCAM_S
+    if (k >= 1) {
+      this.killcam = null
+      return
+    }
+    if (k < 0.08) {
+      ctx.fillStyle = `rgb(255 245 220 / ${0.7 * (1 - k / 0.08)})`
+      ctx.fillRect(0, 0, this.w, this.h)
+    }
+    const pop = Math.min(1, k / 0.1)
+    const fade = k > 0.85 ? (1 - k) / 0.15 : 1
+    const bw = Math.min(this.w * 0.46, 440) * (0.7 + 0.3 * pop)
+    const bh = bw * 0.5
+    const bx = (this.w - bw) / 2
+    const by = Math.max(8, this.h * 0.14)
+    ctx.save()
+    ctx.globalAlpha = fade
+    ctx.fillStyle = 'rgb(0 0 0 / 0.35)'
+    ctx.fillRect(0, 0, this.w, this.h)
+    ctx.beginPath()
+    ctx.roundRect(bx, by, bw, bh, 10)
+    const sky = ctx.createLinearGradient(0, by, 0, by + bh)
+    sky.addColorStop(0, '#1a2a44')
+    sky.addColorStop(1, '#3a2418')
+    ctx.fillStyle = sky
+    ctx.fill()
+    ctx.save()
+    ctx.clip()
+    // The aircraft spins and drops through the frame, trailing fire and smoke.
+    const cx = bx + bw * (0.3 + 0.4 * k)
+    const cy = by + bh * (0.3 + 0.5 * k * k)
+    for (let i = 0; i < 10; i++) {
+      const back = i * 0.035
+      const r = bw * (0.04 + i * 0.014)
+      const g = ctx.createRadialGradient(cx - bw * back, cy - bh * back * 0.8, 0, cx - bw * back, cy - bh * back * 0.8, r)
+      g.addColorStop(0, i < 4 ? 'rgb(255 220 120 / 0.9)' : 'rgb(120 110 100 / 0.5)')
+      g.addColorStop(1, 'rgb(80 60 50 / 0)')
+      ctx.fillStyle = g
+      ctx.beginPath()
+      ctx.arc(cx - bw * back, cy - bh * back * 0.8, r, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    const ghost = { ...plane, x: cx, y: cy, heading: plane.heading + k * 9, down: undefined }
+    this.drawPlane(ghost, t, bw / 110, false)
+    const burst = Math.max(0, 1 - Math.abs(k - 0.12) / 0.12)
+    if (burst > 0) {
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, bw * 0.3 * burst)
+      g.addColorStop(0, 'rgb(255 250 220 / 0.95)')
+      g.addColorStop(0.4, 'rgb(255 160 40 / 0.8)')
+      g.addColorStop(1, 'rgb(200 40 10 / 0)')
+      ctx.fillStyle = g
+      ctx.fillRect(bx, by, bw, bh)
+    }
+    ctx.fillStyle = 'rgb(255 255 255 / 0.05)'
+    for (let y = by; y < by + bh; y += 4) ctx.fillRect(bx, y, bw, 1)
+    ctx.restore()
+    ctx.lineWidth = 3
+    ctx.strokeStyle = plane.team === 'enemy' ? '#ffd36b' : '#ff5a3c'
+    ctx.stroke()
+    ctx.font = `700 ${Math.round(bw / 26)}px system-ui, sans-serif`
+    ctx.fillStyle = Math.floor(t * 3) % 2 ? '#ff3b30' : '#ff8a80'
+    ctx.fillText('● REPLAY', bx + 10, by + bw / 20)
+    const headline = plane.team === 'enemy' ? `ENEMY ${NAMES[plane.kind]} DESTROYED!` : `OUR ${NAMES[plane.kind]} IS DOWN!`
+    ctx.font = `900 ${Math.round(bw / 13)}px system-ui, sans-serif`
+    ctx.textAlign = 'center'
+    ctx.lineWidth = 5
+    ctx.strokeStyle = 'rgb(0 0 0 / 0.8)'
+    const ty = by + bh + bw / 11
+    ctx.strokeText(headline, this.w / 2, ty)
+    ctx.fillStyle = plane.team === 'enemy' ? '#ffd36b' : '#ff6a50'
+    ctx.fillText(headline, this.w / 2, ty)
+    ctx.restore()
   }
 
   private drawPlane(p: Plane, t: number, s: number, shadow: boolean) {

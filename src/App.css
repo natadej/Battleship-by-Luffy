@@ -1106,3 +1106,20 @@ kbd {
     height: 11px;
   }
 }
+
+/* Square tapped early: fires as soon as it's your turn. */
+.grid-enemy .cell.queued::after {
+  content: '';
+  position: absolute;
+  inset: 12%;
+  border: 2px dashed #ffd36b;
+  border-radius: 50%;
+  animation: spin 2s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

@@ -31,7 +31,7 @@ import { isMuted, playExplosion, playSplash, setMuted, unlockAudio } from './sou
 import './App.css'
 
 /** Pause between the player's impact and the enemy starting to aim. */
-const AI_PAUSE_MS = 500
+const AI_PAUSE_MS = 250
 const LEVEL_KEY = 'battleship-level'
 
 type Drag = { id: string; grab: number; orientation: Orientation; source: 'picker' | 'ship'; x0: number; y0: number; moved: boolean }
@@ -87,6 +87,7 @@ export default function App() {
   const [name, setName] = useState(savedName)
   const [submitted, setSubmitted] = useState<ScoreEntry | null>(null)
   const [raidAt, setRaidAt] = useState(0)
+  const [queued, setQueued] = useState<Coord | null>(null)
   const [raiding, setRaiding] = useState(false)
   const [now, setNow] = useState(Date.now)
 
@@ -303,20 +304,36 @@ export default function App() {
     setRaidAt(Date.now() + RAID_MS)
     setLastAiShot(null)
     setLastPlayerShot(null)
+    setQueued(null)
     setAssisted(shade)
     setSubmitted(null)
   }
 
+  // A square tapped while waiting fires as soon as the turn comes back.
+  useEffect(() => {
+    if (!queued || phase !== 'playing' || turn !== 'player' || inFlight) return
+    const t = setTimeout(() => {
+      setQueued(null)
+      void fireAt(queued)
+    }, 0)
+    return () => clearTimeout(t)
+  })
+
   async function fireAt(coord: Coord) {
-    if (turn !== 'player' || inFlight || enemy.shots[coord.r][coord.c]) return
-    if (pending.current.raid.some((p) => sameCoord(p, coord))) return
+    if (phase !== 'playing' || enemy.shots[coord.r][coord.c]) return
     unlockAudio()
+    const busy = turn !== 'player' || inFlight || pending.current.player
+    if (busy || pending.current.raid.some((p) => sameCoord(p, coord))) {
+      setQueued((q) => (q && sameCoord(q, coord) ? null : coord))
+      return
+    }
     pending.current.player = coord
     setInFlight('player')
     await launch('player', coord)
     pending.current.player = null
-    if (stateRef.current.phase !== 'playing') return setInFlight(null)
-    playShotSound(stateRef.current.enemy, coord)
+    const s = stateRef.current
+    if (s.phase !== 'playing' || s.enemy.shots[coord.r][coord.c]) return setInFlight(null)
+    playShotSound(s.enemy, coord)
     setLastPlayerShot(coord)
     dispatch({ type: 'playerFire', coord })
     setInFlight(null)
@@ -585,7 +602,8 @@ export default function App() {
                 label="Enemy board"
                 showShips={phase === 'over' ? 'all' : 'sunk'}
                 variant="enemy"
-                interactive={phase === 'playing' && turn === 'player' && !inFlight}
+                interactive={phase === 'playing'}
+                queued={queued}
                 lastShot={lastPlayerShot}
                 onCellClick={fireAt}
                 heat={heat}
