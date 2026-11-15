@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { FLEET, emptyBoard, fire, placeShip, randomBoard } from './board'
 import { initialState, reducer } from './game'
-import { healthOf, pickRaidTargets } from './raid'
+import { healthOf, pickAttacked, pickRaidTargets } from './raid'
 import { statsOf } from './score'
 import { seeded } from './testUtils'
 
@@ -14,6 +14,18 @@ function battle(player = randomBoard(seeded(1)), enemy = randomBoard(seeded(2)))
 }
 
 describe('air raids', () => {
+  it('only pick squares that were already fired at, so they can never sink a fresh ship', () => {
+    let board = randomBoard(seeded(9))
+    expect(pickAttacked(board, 2, seeded(1))).toEqual([])
+    board = fire(board, { r: 0, c: 0 }).board
+    board = fire(board, { r: 5, c: 5 }).board
+    board = fire(board, { r: 9, c: 9 }).board
+    const picks = pickAttacked(board, 5, seeded(1))
+    expect(picks).toHaveLength(3)
+    for (const p of picks) expect(board.shots[p.r][p.c]).not.toBeNull()
+  })
+
+
   it('picks distinct unshot squares and skips excluded ones', () => {
     let board = emptyBoard()
     for (let c = 0; c < 10; c++) board = fire(board, { r: 0, c }).board
