@@ -127,14 +127,81 @@ kbd {
 .boards {
   display: flex;
   flex-wrap: wrap;
-  gap: 24px;
   justify-content: center;
+  border-radius: 16px;
+  box-shadow:
+    inset 0 0 70px rgb(0 12 28 / 0.65),
+    0 6px 24px rgb(0 0 0 / 0.35);
+}
+
+/* One ocean behind both boards: two swells rolling at different speeds and angles, glints of light,
+   and bubbles drifting up. The canvas adds bubbles that pop at the surface during battle. */
+.boards {
+  background-color: #12416a;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='150' height='150'%3E%3Cg fill='none' stroke='%23e6f4ff'%3E%3Ccircle cx='18' cy='30' r='2.5' stroke-opacity='.45'/%3E%3Ccircle cx='70' cy='90' r='1.6' stroke-opacity='.35'/%3E%3Ccircle cx='120' cy='20' r='3.2' stroke-opacity='.3'/%3E%3Ccircle cx='100' cy='130' r='2' stroke-opacity='.4'/%3E%3Ccircle cx='40' cy='120' r='1.2' stroke-opacity='.35'/%3E%3C/g%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='70'%3E%3Cpath d='M0 35 C40 15 80 15 120 35 S200 55 240 35' fill='none' stroke='%23ffffff' stroke-opacity='.16' stroke-width='3'/%3E%3Cpath d='M0 38 C40 18 80 18 120 38 S200 58 240 38' fill='none' stroke='%23001a33' stroke-opacity='.25' stroke-width='4'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='150' height='44'%3E%3Cpath d='M0 22 Q37 10 75 22 T150 22' fill='none' stroke='%23bfe6ff' stroke-opacity='.12' stroke-width='2'/%3E%3C/svg%3E"),
+    radial-gradient(ellipse 60% 40% at 25% 10%, rgb(140 210 255 / 0.22), transparent 70%),
+    radial-gradient(ellipse 50% 35% at 80% 90%, rgb(0 20 40 / 0.35), transparent 70%),
+    linear-gradient(180deg, #1c5b8c, #0d2f52);
+  background-size:
+    150px 150px,
+    240px 70px,
+    150px 44px,
+    100% 100%,
+    100% 100%,
+    100% 100%;
+  animation: sea 14s linear infinite;
+}
+
+@keyframes sea {
+  from {
+    background-position:
+      0 0,
+      0 0,
+      0 0,
+      0 0,
+      0 0,
+      0 0;
+  }
+  to {
+    background-position:
+      30px -300px,
+      480px 70px,
+      -300px -44px,
+      0 0,
+      0 0,
+      0 0;
+  }
 }
 
 .board-panel {
-  background: var(--panel);
-  border-radius: 12px;
   padding: 16px;
+}
+
+.side-player h2 {
+  color: #8fd0ff;
+}
+
+.side-enemy h2 {
+  color: #ff9a8a;
+}
+
+.side-player .grid {
+  filter: drop-shadow(0 0 6px rgb(62 155 255 / 0.45));
+}
+
+.side-enemy .grid {
+  filter: drop-shadow(0 0 6px rgb(255 59 48 / 0.4));
+}
+
+.side-player .health-fill {
+  background: linear-gradient(90deg, #1f6fd1, #6cc4ff);
+}
+
+.side-enemy .health-fill {
+  background: linear-gradient(90deg, #c0281b, #ff7d6b);
 }
 
 .grid {
@@ -158,34 +225,14 @@ kbd {
   align-self: end;
 }
 
-/* Water: one wave pattern shared by every cell (background-attachment: fixed), drifting slowly. */
+/* Cells are glassy windows onto the shared ocean behind both boards. */
 .cell {
   position: relative;
   border: none;
   border-radius: 3px;
   padding: 0;
-  background-color: var(--water);
-  background-image:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='48'%3E%3Cpath d='M0 12 Q15 4 30 12 T60 12 T90 12 T120 12' fill='none' stroke='%23ffffff' stroke-opacity='.10' stroke-width='2'/%3E%3Cpath d='M-30 36 Q-15 28 0 36 T30 36 T60 36 T90 36 T120 36' fill='none' stroke='%23ffffff' stroke-opacity='.06' stroke-width='2'/%3E%3C/svg%3E"),
-    radial-gradient(circle at 30% 20%, rgba(90, 160, 220, 0.18), transparent 60%);
-  background-size:
-    120px 48px,
-    360px 360px;
-  background-attachment: fixed;
-  animation: waves 9s linear infinite;
-}
-
-@keyframes waves {
-  from {
-    background-position:
-      0 0,
-      0 0;
-  }
-  to {
-    background-position:
-      120px 48px,
-      360px 0;
-  }
+  background: rgb(120 190 255 / 0.06);
+  box-shadow: inset 0 0 0 1px rgb(170 220 255 / 0.14);
 }
 
 .cell:enabled {
@@ -469,7 +516,7 @@ kbd {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .cell,
+  .boards,
   .ship-sprite,
   .mark-hit::before {
     animation: none;
@@ -950,7 +997,6 @@ kbd {
 
   .boards {
     flex-wrap: nowrap;
-    gap: 10px;
     align-items: flex-start;
   }
 
@@ -1055,18 +1101,6 @@ kbd {
   text-shadow: 0 1px 2px #000;
 }
 
-.raid-timer {
-  margin: 4px 0 0;
-  font-size: 0.8rem;
-  color: #ffb066;
-}
-
-.raid-timer.incoming {
-  color: #ff5a3c;
-  font-weight: 700;
-  animation: flicker 0.3s steps(2) infinite;
-}
-
 .status-draw {
   color: #ffb066;
   font-weight: 600;
@@ -1097,11 +1131,6 @@ kbd {
 }
 
 @media (orientation: landscape) and (max-height: 520px) {
-  .raid-timer {
-    margin: 0;
-    font-size: 0.75rem;
-  }
-
   .health {
     height: 11px;
   }
