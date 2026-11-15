@@ -1010,3 +1010,99 @@ kbd {
     display: none;
   }
 }
+
+/* Air battle canvas, fleet health and air-raid countdown. */
+.air-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+}
+
+.health {
+  position: relative;
+  flex: 1;
+  min-width: 64px;
+  max-width: 140px;
+  height: 14px;
+  border-radius: 7px;
+  background: #0b1626;
+  border: 1px solid #2a4566;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.health-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: linear-gradient(90deg, #2fbf71, #8ee36b);
+  transition: width 0.6s ease;
+}
+
+.health.low .health-fill {
+  background: linear-gradient(90deg, #d8402b, #ff8a3c);
+  animation: flicker 0.5s steps(2) infinite;
+}
+
+.health b {
+  position: relative;
+  font-size: 0.65rem;
+  color: #fff;
+  text-shadow: 0 1px 2px #000;
+}
+
+.raid-timer {
+  margin: 4px 0 0;
+  font-size: 0.8rem;
+  color: #ffb066;
+}
+
+.raid-timer.incoming {
+  color: #ff5a3c;
+  font-weight: 700;
+  animation: flicker 0.3s steps(2) infinite;
+}
+
+.status-draw {
+  color: #ffb066;
+  font-weight: 600;
+}
+
+.winner-banner {
+  margin: 0;
+  font-size: 1.25rem;
+  justify-content: center;
+  text-align: center;
+  animation: banner-pop 0.6s cubic-bezier(.2, 1.6, .4, 1) both;
+}
+
+.winner-player {
+  color: #ffd36b;
+  text-shadow: 0 0 12px rgb(255 200 80 / 0.6);
+}
+
+.winner-ai {
+  color: var(--hit);
+}
+
+@keyframes banner-pop {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .raid-timer {
+    margin: 0;
+    font-size: 0.75rem;
+  }
+
+  .health {
+    height: 11px;
+  }
+}

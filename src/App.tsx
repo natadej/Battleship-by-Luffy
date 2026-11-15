@@ -1,5 +1,7 @@
 import { type PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
+import type { AirShow, StrikeTarget } from './airshow'
 import { type Battery, SHOT_MS, fireRocket } from './artillery'
+import { AirBattle } from './components/AirBattle'
 import { Cannon } from './components/Cannon'
 import { FleetStatus } from './components/FleetStatus'
 import { Grid } from './components/Grid'
@@ -16,11 +18,13 @@ import {
   placeShip,
   randomBoard,
   removeShip,
+  sameCoord,
   shipAt,
   shipCells,
 } from './game/board'
 import { fleetPlaced, initialState, reducer } from './game/game'
 import { knowledgeOf, normalize, probabilityGrid } from './game/probability'
+import { RAID_MS, RAID_SHOTS, healthOf, pickRaidTargets } from './game/raid'
 import { computeScore, pct, statsOf } from './game/score'
 import { type ScoreEntry, saveName, savedName, submitScore } from './leaderboard'
 import { isMuted, playExplosion, playSplash, setMuted, unlockAudio } from './sound'
@@ -52,6 +56,16 @@ function cellUnder(x: number, y: number): Coord | null {
 const anchorFor = (cell: Coord, d: Pick<Drag, 'grab' | 'orientation'>): Coord =>
   d.orientation === 'H' ? { r: cell.r, c: cell.c - d.grab } : { r: cell.r - d.grab, c: cell.c }
 
+function HealthBar({ value, label }: { value: number; label: string }) {
+  const percent = Math.round(value * 100)
+  return (
+    <span className={`health ${percent <= 30 ? 'low' : ''}`} role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}>
+      <span className="health-fill" style={{ width: `${percent}%` }} />
+      <b>{percent}%</b>
+    </span>
+  )
+}
+
 function initialLevel(): Level {
   const n = Number(localStorage.getItem(LEVEL_KEY))
   return n >= 1 && n <= 5 ? (n as Level) : 3
@@ -72,6 +86,9 @@ export default function App() {
   const [showBoard, setShowBoard] = useState(false)
   const [name, setName] = useState(savedName)
   const [submitted, setSubmitted] = useState<ScoreEntry | null>(null)
+  const [raidAt, setRaidAt] = useState(0)
+  const [raiding, setRaiding] = useState(false)
+  const [now, setNow] = useState(Date.now)
 
   const { phase, player, enemy, turn, winner, log, level } = state
   const selected = FLEET.find((s) => s.id === selectedId) ?? null
@@ -81,6 +98,14 @@ export default function App() {
   useEffect(() => {
     playerRef.current = player
   }, [player])
+  const stateRef = useRef(state)
+  useEffect(() => {
+    stateRef.current = state
+  }, [state])
+  /** Squares with a rocket or bomb on the way, so raids and aimed shots don't pick the same one. */
+  const pending = useRef<{ player: Coord | null; ai: Coord | null; raid: Coord[] }>({ player: null, ai: null, raid: [] })
+  const air = useRef<AirShow | null>(null)
+  const registerAir = useCallback((show: AirShow | null) => void (air.current = show), [])
   const dragRef = useRef<Drag | null>(null)
   const layerRef = useRef<HTMLDivElement>(null)
   const batteries = useRef<{ player: Battery | null; enemy: Battery | null }>({ player: null, enemy: null })
@@ -101,11 +126,16 @@ export default function App() {
     if (phase !== 'playing' || turn !== 'ai') return
     let cancelled = false
     const t = setTimeout(async () => {
-      const coord = chooseShot(state.ai, Math.random, level)
+      const aim = () => chooseShot(stateRef.current.ai, Math.random, stateRef.current.level)
+      let coord = aim()
+      pending.current.ai = coord
       setInFlight('ai')
       await launch('ai', coord)
+      pending.current.ai = null
       if (cancelled) return
-      playShotSound(state.player, coord)
+      // An air raid may have hit the square while the rocket was in the air.
+      if (stateRef.current.player.shots[coord.r][coord.c]) coord = aim()
+      playShotSound(stateRef.current.player, coord)
       setLastAiShot(coord)
       dispatch({ type: 'aiFire', coord })
       setInFlight(null)
@@ -115,7 +145,41 @@ export default function App() {
       clearTimeout(t)
       setInFlight(null)
     }
-  }, [phase, turn, state.ai, state.player, level, launch])
+    // Reads the latest board through stateRef, so air raids don't restart a shot in flight.
+  }, [phase, turn, launch])
+
+  // Air raids: every RAID_MS, strike jets bomb RAID_SHOTS random squares on each board.
+  useEffect(() => {
+    if (phase !== 'playing') return
+    let alive = true
+    const inFlight = pending.current
+    const tick = setInterval(() => setNow(Date.now()), 250)
+    const wave = setInterval(async () => {
+      setRaidAt(Date.now() + RAID_MS)
+      const s = stateRef.current
+      const { player: aimedEnemy, ai: aimedOwn } = inFlight
+      const enemyTargets = pickRaidTargets(s.enemy, RAID_SHOTS, Math.random, aimedEnemy ? [aimedEnemy] : [])
+      const ownTargets = pickRaidTargets(s.player, RAID_SHOTS, Math.random, aimedOwn ? [aimedOwn] : [])
+      inFlight.raid = enemyTargets
+      setRaiding(true)
+      const targets: StrikeTarget[] = [
+        ...enemyTargets.map((c) => ({ board: 'enemy' as const, ...c, hit: !!shipAt(s.enemy, c) })),
+        ...ownTargets.map((c) => ({ board: 'own' as const, ...c, hit: !!shipAt(s.player, c) })),
+      ]
+      await (air.current ? air.current.strike(targets) : sleep(1500))
+      inFlight.raid = []
+      if (!alive) return
+      setRaiding(false)
+      dispatch({ type: 'raid', enemy: enemyTargets, player: ownTargets })
+    }, RAID_MS)
+    return () => {
+      alive = false
+      clearInterval(tick)
+      clearInterval(wave)
+      inFlight.raid = []
+      setRaiding(false)
+    }
+  }, [phase])
 
   // R rotates the ship being placed.
   useEffect(() => {
@@ -236,6 +300,7 @@ export default function App() {
   function start() {
     unlockAudio()
     dispatch({ type: 'start', enemy: randomBoard(), level })
+    setRaidAt(Date.now() + RAID_MS)
     setLastAiShot(null)
     setLastPlayerShot(null)
     setAssisted(shade)
@@ -244,10 +309,14 @@ export default function App() {
 
   async function fireAt(coord: Coord) {
     if (turn !== 'player' || inFlight || enemy.shots[coord.r][coord.c]) return
+    if (pending.current.raid.some((p) => sameCoord(p, coord))) return
     unlockAudio()
+    pending.current.player = coord
     setInFlight('player')
     await launch('player', coord)
-    playShotSound(enemy, coord)
+    pending.current.player = null
+    if (stateRef.current.phase !== 'playing') return setInFlight(null)
+    playShotSound(stateRef.current.enemy, coord)
     setLastPlayerShot(coord)
     dispatch({ type: 'playerFire', coord })
     setInFlight(null)
@@ -278,7 +347,7 @@ export default function App() {
     return normalize(probabilityGrid(k.grid, k.remaining))
   }, [shade, phase, enemy])
 
-  const stats = statsOf(enemy)
+  const stats = statsOf(enemy, state.raided.enemy)
   const score = computeScore({ accuracy: stats.accuracy, level, won: winner === 'player', assisted })
 
   function saveScore() {
@@ -307,7 +376,9 @@ export default function App() {
       : phase === 'over'
         ? winner === 'player'
           ? 'Victory! You sank the enemy fleet.'
-          : 'Defeat. The enemy sank your fleet.'
+          : winner === 'draw'
+            ? 'Draw! Both fleets went down together.'
+            : 'Defeat. The enemy sank your fleet.'
         : inFlight === 'player'
           ? 'Rocket away…'
           : turn === 'player'
@@ -348,6 +419,11 @@ export default function App() {
         <p className={`status ${phase === 'over' ? `status-${winner}` : ''}`} role="status" aria-live="polite">
           {status}
         </p>
+        {phase === 'playing' && (
+          <p className={`raid-timer ${raiding ? 'incoming' : ''}`}>
+            {raiding ? '✈ AIR RAID!' : `✈ Air raid in ${Math.max(0, Math.ceil((raidAt - now) / 1000))}s`}
+          </p>
+        )}
       </header>
 
       {phase === 'placement' && (
@@ -396,7 +472,9 @@ export default function App() {
                 {l.level} <small>{l.name}</small>
               </button>
             ))}
-            <p className="level-hint">{levelInfo.strategy}. Score ×{level}.</p>
+            <p className="level-hint">
+              {levelInfo.strategy}. Score ×{level}. Air raids hit {RAID_SHOTS} random squares on each board every {RAID_MS / 1000}s.
+            </p>
           </div>
           <button type="button" className="primary start-btn" disabled={!fleetPlaced(player)} onClick={start}>
             Start battle
@@ -406,6 +484,16 @@ export default function App() {
 
       {phase === 'over' && (
         <section className="game-over" aria-label="Result">
+          <h2 className={`winner-banner winner-${winner}`}>
+            {winner === 'player'
+              ? `🏆 Congratulations${name.trim() ? `, ${name.trim()}` : ''}! You won the battle.`
+              : winner === 'ai'
+                ? `The enemy ${levelInfo.name} wins this time. Congratulations to them!`
+                : 'Draw! Both fleets went down in the same air raid.'}
+          </h2>
+          <p className="lb-note">
+            Your fleet {pct(healthOf(player))} · Enemy fleet {pct(healthOf(enemy))}
+          </p>
           <div className="result-stats">
             <div>
               <b>{score}</b>
@@ -423,6 +511,7 @@ export default function App() {
             </div>
           </div>
           {assisted && <p className="lb-note">Probability shade used: score halved.</p>}
+          {state.raided.enemy.length > 0 && <p className="lb-note">Air-raid hits don't count toward your accuracy.</p>}
           {!submitted ? (
             <form
               className="submit-score"
@@ -436,9 +525,8 @@ export default function App() {
                 Save to leaderboard
               </button>
             </form>
-          ) : (
-            <LeaderboardTable highlight={submitted} />
-          )}
+          ) : null}
+          <LeaderboardTable highlight={submitted} />
           <button type="button" className="primary" onClick={playAgain}>
             Play again
           </button>
@@ -449,6 +537,7 @@ export default function App() {
         <div className="board-panel">
           <h2>
             Your fleet
+            {phase !== 'placement' && <HealthBar value={healthOf(player)} label="Your fleet health" />}
             {phase !== 'placement' && (
               <span className={`ai-mode ai-${level === 1 ? 'hunt' : mode}`} title={levelInfo.strategy}>
                 Lv {level} {levelInfo.name}: {level === 1 ? 'Random' : level === 5 && mode === 'hunt' ? 'Calculating' : mode === 'hunt' ? 'Hunting' : 'Targeting'}
@@ -477,6 +566,7 @@ export default function App() {
           <div className="board-panel">
             <h2>
               Enemy waters
+              <HealthBar value={healthOf(enemy)} label="Enemy fleet health" />
               {phase === 'playing' && (
                 <button
                   type="button"
@@ -518,6 +608,7 @@ export default function App() {
         </section>
       )}
 
+      {phase === 'playing' && <AirBattle register={registerAir} />}
       {showBoard && <LeaderboardDialog onClose={() => setShowBoard(false)} />}
     </main>
   )

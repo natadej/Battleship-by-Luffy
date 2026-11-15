@@ -125,3 +125,106 @@ export function playLaunch() {
   src.start(t)
   src.stop(t + 1.1)
 }
+
+// Air battle: quieter, short effects. Callers rate-limit them.
+
+function noiseBurst(ac: AudioContext, t: number, dur: number, type: BiquadFilterType, freq: number, peak: number) {
+  const src = ac.createBufferSource()
+  src.buffer = noiseBuffer(ac)
+  const f = ac.createBiquadFilter()
+  f.type = type
+  f.frequency.value = freq
+  src.connect(f).connect(envelope(ac, t, peak, dur))
+  src.start(t, Math.random())
+  src.stop(t + dur + 0.05)
+  return f
+}
+
+/** Machine-gun rattle. */
+export function playMachineGun(rounds = 7) {
+  const ac = audio()
+  if (!ac || muted) return
+  for (let i = 0; i < rounds; i++) noiseBurst(ac, ac.currentTime + i * 0.065, 0.05, 'highpass', 900, 0.14)
+}
+
+/** Missile or rocket leaving the rail. */
+export function playMissile() {
+  const ac = audio()
+  if (!ac || muted) return
+  const t = ac.currentTime
+  const f = noiseBurst(ac, t, 0.6, 'bandpass', 700, 0.1)
+  f.frequency.exponentialRampToValueAtTime(2600, t + 0.6)
+}
+
+/** Jet fly-by: a roar that rises and falls in pitch. */
+export function playJet() {
+  const ac = audio()
+  if (!ac || muted) return
+  const t = ac.currentTime
+  const f = noiseBurst(ac, t, 2.2, 'bandpass', 500, 0.12)
+  f.Q.value = 1.5
+  f.frequency.setValueAtTime(500, t)
+  f.frequency.exponentialRampToValueAtTime(1800, t + 0.9)
+  f.frequency.exponentialRampToValueAtTime(350, t + 2.2)
+}
+
+/** Helicopter rotor chop. */
+export function playHelicopter() {
+  const ac = audio()
+  if (!ac || muted) return
+  for (let i = 0; i < 14; i++) noiseBurst(ac, ac.currentTime + i * 0.085, 0.06, 'lowpass', 260, i < 3 ? 0.08 * (i + 1) : 0.25)
+}
+
+/** B-52 formation: a deep, detuned engine drone. */
+export function playBomber() {
+  const ac = audio()
+  if (!ac || muted) return
+  const t = ac.currentTime
+  const g = ac.createGain()
+  g.gain.setValueAtTime(0.0001, t)
+  g.gain.exponentialRampToValueAtTime(0.09, t + 1)
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 4)
+  const lp = ac.createBiquadFilter()
+  lp.type = 'lowpass'
+  lp.frequency.value = 320
+  lp.connect(g).connect(ac.destination)
+  for (const hz of [55, 58.5, 110]) {
+    const o = ac.createOscillator()
+    o.type = 'sawtooth'
+    o.frequency.value = hz
+    o.connect(lp)
+    o.start(t)
+    o.stop(t + 4.1)
+  }
+}
+
+/** Air-raid siren: two rising and falling wails. */
+export function playSiren() {
+  const ac = audio()
+  if (!ac || muted) return
+  const t = ac.currentTime
+  const o = ac.createOscillator()
+  o.type = 'triangle'
+  o.frequency.setValueAtTime(420, t)
+  o.frequency.linearRampToValueAtTime(880, t + 0.5)
+  o.frequency.linearRampToValueAtTime(420, t + 1)
+  o.frequency.linearRampToValueAtTime(880, t + 1.5)
+  o.frequency.linearRampToValueAtTime(420, t + 2)
+  const g = ac.createGain()
+  g.gain.setValueAtTime(0.0001, t)
+  g.gain.exponentialRampToValueAtTime(0.12, t + 0.2)
+  g.gain.setValueAtTime(0.12, t + 1.7)
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 2)
+  o.connect(g).connect(ac.destination)
+  o.start(t)
+  o.stop(t + 2.05)
+}
+
+/** Small mid-air explosion: flak or an aircraft going down. */
+export function playPop() {
+  const ac = audio()
+  if (!ac || muted) return
+  const t = ac.currentTime
+  const f = noiseBurst(ac, t, 0.5, 'lowpass', 1500, 0.3)
+  f.frequency.exponentialRampToValueAtTime(150, t + 0.5)
+}
