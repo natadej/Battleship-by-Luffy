@@ -1,0 +1,29 @@
+import type { Level } from './ai'
+import type { Board } from './board'
+
+export interface ShotStats {
+  shots: number
+  hits: number
+  accuracy: number
+}
+
+/** Shots fired at a board and how many of them hit. */
+export function statsOf(board: Board): ShotStats {
+  const marks = board.shots.flat()
+  const shots = marks.filter((m) => m !== null).length
+  const hits = marks.filter((m) => m === 'hit').length
+  return { shots, hits, accuracy: shots ? hits / shots : 0 }
+}
+
+export const WIN_BONUS = 500
+
+/**
+ * Score = (accuracy × 1000 + win bonus) × level, halved when the probability shade was used.
+ * Accuracy dominates, so the leaderboard rewards whoever wastes the fewest shots.
+ */
+export function computeScore(o: { accuracy: number; level: Level; won: boolean; assisted: boolean }): number {
+  const base = o.accuracy * 1000 + (o.won ? WIN_BONUS : 0)
+  return Math.round(base * o.level * (o.assisted ? 0.5 : 1))
+}
+
+export const pct = (x: number) => `${Math.round(x * 100)}%`

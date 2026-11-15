@@ -5,8 +5,8 @@ let ctx: AudioContext | null = null
 let noise: AudioBuffer | null = null
 let muted = typeof localStorage !== 'undefined' && localStorage.getItem(MUTE_KEY) === '1'
 
-/** Time between firing and impact; matches the shell-drop animation in App.css. */
-export const IMPACT_DELAY_S = 0.22
+/** Small lead so the sound lines up with the impact animation starting on the next frame. */
+export const IMPACT_DELAY_S = 0.02
 
 function audio(): AudioContext | null {
   if (typeof window === 'undefined' || !('AudioContext' in window)) return null
@@ -98,4 +98,30 @@ export function playSplash() {
     osc.start(t + offset)
     osc.stop(t + offset + 0.2)
   }
+}
+
+/** Rocket launch: a short cannon thump followed by a rising whoosh. */
+export function playLaunch() {
+  const ac = audio()
+  if (!ac || muted) return
+  const t = ac.currentTime
+
+  const thump = ac.createOscillator()
+  thump.type = 'triangle'
+  thump.frequency.setValueAtTime(110, t)
+  thump.frequency.exponentialRampToValueAtTime(45, t + 0.18)
+  thump.connect(envelope(ac, t, 0.6, 0.25))
+  thump.start(t)
+  thump.stop(t + 0.3)
+
+  const src = ac.createBufferSource()
+  src.buffer = noiseBuffer(ac)
+  const bp = ac.createBiquadFilter()
+  bp.type = 'bandpass'
+  bp.Q.value = 3
+  bp.frequency.setValueAtTime(300, t)
+  bp.frequency.exponentialRampToValueAtTime(2200, t + 0.9)
+  src.connect(bp).connect(envelope(ac, t + 0.05, 0.22, 1))
+  src.start(t)
+  src.stop(t + 1.1)
 }

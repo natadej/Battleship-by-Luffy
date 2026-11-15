@@ -10,10 +10,15 @@ header {
   margin-bottom: 16px;
 }
 
-.sound-toggle {
+.header-actions {
   position: absolute;
   top: 0;
   right: 0;
+  display: flex;
+  gap: 8px;
+}
+
+.chip {
   background: var(--panel);
   border: 1px solid #2a4566;
   border-radius: 8px;
@@ -25,7 +30,7 @@ header {
   gap: 6px;
 }
 
-.sound-toggle:hover {
+.chip:hover {
   border-color: var(--accent);
 }
 
@@ -238,6 +243,7 @@ kbd {
   position: relative;
   z-index: 1;
   pointer-events: none;
+  touch-action: none;
   display: grid;
   animation: bob 3.2s ease-in-out infinite;
 }
@@ -303,7 +309,7 @@ kbd {
   display: grid;
   place-items: center;
   pointer-events: none;
-  animation: mark-in 0.25s ease-out 0.35s both;
+  animation: mark-in 0.25s ease-out 0.12s both;
 }
 
 .mark-hit::before {
@@ -343,7 +349,7 @@ kbd {
   }
 }
 
-/* One-shot effects (z 4). The shell lands at 0.22s, matching IMPACT_DELAY_S in sound.ts. */
+/* One-shot effects (z 4), played as the rocket lands. */
 .fx {
   position: absolute;
   inset: 0;
@@ -360,48 +366,25 @@ kbd {
   opacity: 0;
 }
 
-.fx-shell {
-  width: 30%;
-  height: 30%;
-  background: #1b1f27;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.5);
-  animation: shell-drop 0.22s ease-in both;
-}
-
-@keyframes shell-drop {
-  from {
-    opacity: 1;
-    transform: translateY(-160%) scale(1.8);
-  }
-  99% {
-    opacity: 1;
-    transform: translateY(0) scale(0.6);
-  }
-  to {
-    opacity: 0;
-    transform: translateY(0) scale(0.6);
-  }
-}
-
 .fx-flash {
   width: 100%;
   height: 100%;
   background: radial-gradient(circle, #fffbe6 0 15%, #ffd166 30%, #ff7a1a 55%, rgba(229, 72, 77, 0) 70%);
-  animation: burst 0.7s ease-out 0.22s both;
+  animation: burst 0.7s ease-out 0s both;
 }
 
 .fx-ring {
   width: 100%;
   height: 100%;
   border: 3px solid #ffb02e;
-  animation: ring 0.6s ease-out 0.22s both;
+  animation: ring 0.6s ease-out 0s both;
 }
 
 .fx-spark {
   width: 14%;
   height: 14%;
   background: #ffd166;
-  animation: spark 0.6s ease-out 0.22s both;
+  animation: spark 0.6s ease-out 0s both;
 }
 
 @keyframes burst {
@@ -445,18 +428,18 @@ kbd {
   width: 100%;
   height: 100%;
   border: 2px solid rgba(219, 233, 247, 0.9);
-  animation: ripple 0.8s ease-out 0.22s both;
+  animation: ripple 0.8s ease-out 0s both;
 }
 
 .fx-ripple-2 {
-  animation-delay: 0.38s;
+  animation-delay: 0.16s;
 }
 
 .fx-drop {
   width: 12%;
   height: 18%;
   background: #cfe6ff;
-  animation: drop 0.6s ease-out 0.22s both;
+  animation: drop 0.6s ease-out 0s both;
 }
 
 @keyframes ripple {
@@ -568,9 +551,462 @@ kbd {
   color: var(--text);
 }
 
-@media (max-width: 600px) {
-  .sound-toggle {
+
+/* Placement: drag and drop, rotate, level picker. */
+.ship-sprite.grabbable {
+  pointer-events: auto;
+  cursor: grab;
+}
+
+.ship-sprite.dragging {
+  opacity: 0.35;
+}
+
+.ship-btn {
+  touch-action: none;
+  user-select: none;
+}
+
+.controls .rotate-btn {
+  font-weight: 600;
+  padding: 10px 16px;
+}
+
+.level-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+}
+
+.level-picker > span {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.controls .level-picker button.selected {
+  border-color: var(--warn, #ff9f43);
+  box-shadow: 0 0 0 2px var(--warn, #ff9f43) inset;
+}
+
+.level-picker small {
+  color: var(--muted);
+}
+
+.level-hint {
+  flex-basis: 100%;
+  margin: 0;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+/* Probability shade: an orange glow under the water. */
+.heat {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(circle, rgb(255 140 30 / 0.95) 0%, rgb(255 110 0 / 0.55) 45%, transparent 75%);
+  opacity: calc(var(--p) * 0.85);
+  animation: heat-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes heat-pulse {
+  50% {
+    filter: brightness(1.25);
+  }
+}
+
+.shade-toggle {
+  background: transparent;
+  border: 1px solid #2a4566;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.shade-toggle.on {
+  border-color: #ff8c1e;
+  color: #ffb066;
+  box-shadow: 0 0 10px rgb(255 140 30 / 0.4);
+}
+
+/* Artillery: a cannon riding the edge of each board, and the rocket in flight. */
+.grid-wrap {
+  position: relative;
+  padding: 16px;
+  margin: -8px;
+}
+
+.cannon {
+  position: absolute;
+  z-index: 6;
+  width: 26px;
+  height: 26px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.cannon-base {
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #8aa0b8, #34465c 70%);
+  border: 2px solid #0d1a2a;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.5);
+}
+
+.cannon-enemy .cannon-base {
+  background: radial-gradient(circle at 35% 35%, #d38a8a, #5c2a2a 70%);
+}
+
+.cannon-turret {
+  position: absolute;
+  inset: 0;
+}
+
+.cannon-barrel {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 7px;
+  margin-top: -3.5px;
+  border-radius: 2px 3px 3px 2px;
+  background: linear-gradient(#c9d4e0, #56677b);
+  border: 1px solid #0d1a2a;
+}
+
+.cannon-flash {
+  position: absolute;
+  left: calc(50% + 18px);
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -4px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff6c2, #ffb13b 50%, transparent 70%);
+  opacity: 0;
+}
+
+.cannon.firing .cannon-barrel {
+  animation: recoil 0.3s ease-out;
+}
+
+.cannon.firing .cannon-flash {
+  animation: muzzle 0.3s ease-out;
+}
+
+@keyframes recoil {
+  30% {
+    transform: translateX(-5px);
+  }
+}
+
+@keyframes muzzle {
+  0% {
+    opacity: 1;
+    transform: scale(0.6);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.8);
+  }
+}
+
+.rocket-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.rocket {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+}
+
+.rocket-body {
+  position: absolute;
+  left: -9px;
+  top: -3px;
+  width: 18px;
+  height: 6px;
+  border-radius: 1px 6px 6px 1px;
+  background: linear-gradient(#f1f1f1, #9aa4ae);
+  box-shadow: 0 0 6px rgb(255 200 120 / 0.8);
+}
+
+.rocket-trail {
+  position: absolute;
+  right: 6px;
+  top: -3px;
+  width: 34px;
+  height: 6px;
+  border-radius: 6px;
+  background: linear-gradient(to left, #ffd36b, #ff7a1a 35%, rgb(255 255 255 / 0.25) 70%, transparent);
+  filter: blur(1px);
+  animation: flicker 0.08s steps(2) infinite;
+}
+
+/* Game over: score and leaderboard. */
+.game-over {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin: 0 auto 20px;
+  max-width: 560px;
+  background: var(--panel);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.result-stats {
+  display: flex;
+  gap: 24px;
+}
+
+.result-stats div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.result-stats b {
+  font-size: 1.6rem;
+}
+
+.result-stats span,
+.lb-note {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin: 0;
+}
+
+.submit-score {
+  display: flex;
+  gap: 8px;
+}
+
+.submit-score input {
+  background: #0b1626;
+  border: 1px solid #2a4566;
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: inherit;
+  font: inherit;
+}
+
+.game-over button,
+.submit-score button {
+  background: var(--panel);
+  border: 1px solid #2a4566;
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.game-over .primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #04111f;
+  font-weight: 600;
+}
+
+.lb-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.lb-table th,
+.lb-table td {
+  padding: 4px 8px;
+  text-align: left;
+  border-bottom: 1px solid #1f3550;
+}
+
+.lb-table tr.mine {
+  background: rgb(255 140 30 / 0.15);
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgb(2 8 16 / 0.7);
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+
+.modal {
+  background: var(--panel);
+  border-radius: 12px;
+  padding: 16px;
+  width: min(520px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+}
+
+.icon-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+/* Phones: landscape only. Portrait gets a rotate prompt. */
+.rotate-overlay {
+  display: none;
+}
+
+@media (orientation: portrait) and (max-width: 820px) and (pointer: coarse) {
+  .rotate-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: 24px;
+    text-align: center;
+    background: var(--bg, #07111f);
+  }
+
+  .rotate-overlay button {
+    background: var(--accent);
+    color: #04111f;
+    border: none;
+    border-radius: 8px;
+    padding: 12px 20px;
+    font-weight: 600;
+  }
+}
+
+.rotate-phone {
+  width: 48px;
+  height: 84px;
+  border: 4px solid var(--accent);
+  border-radius: 10px;
+  animation: turn-phone 2s ease-in-out infinite;
+}
+
+@keyframes turn-phone {
+  0%,
+  20% {
+    transform: rotate(0deg);
+  }
+  60%,
+  100% {
+    transform: rotate(-90deg);
+  }
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .app {
+    max-width: none;
+    padding: 6px 8px 16px;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    text-align: left;
+    margin-bottom: 6px;
+  }
+
+  h1 {
+    font-size: 1rem;
+    margin: 0;
+  }
+
+  .header-actions {
     position: static;
-    margin-top: 8px;
+    order: 3;
+    margin-left: auto;
+  }
+
+  .status {
+    font-size: 0.85rem;
+  }
+
+  .chip {
+    padding: 4px 8px;
+    font-size: 0.75rem;
+  }
+
+  .boards {
+    flex-wrap: nowrap;
+    gap: 10px;
+    align-items: flex-start;
+  }
+
+  .board-panel {
+    padding: 6px 8px;
+  }
+
+  .board-panel h2 {
+    font-size: 0.8rem;
+    margin-bottom: 4px;
+  }
+
+  .grid {
+    --cell: min(calc((100dvh - 150px) / 10), calc((50vw - 90px) / 10));
+    grid-template-columns: 14px repeat(10, var(--cell));
+    grid-template-rows: 14px repeat(10, var(--cell));
+    font-size: 0.6rem;
+  }
+
+  .grid-wrap {
+    padding: 12px;
+    margin: -6px;
+  }
+
+  .fleet-status {
+    display: none;
+  }
+
+  .app.phase-placement {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-areas: 'head head' 'board controls' 'log log';
+    column-gap: 12px;
+  }
+
+  .phase-placement header {
+    grid-area: head;
+  }
+
+  .phase-placement .controls {
+    grid-area: controls;
+    align-content: flex-start;
+    gap: 8px;
+    margin: 0;
+  }
+
+  .phase-placement .boards {
+    grid-area: board;
+  }
+
+  .controls button {
+    padding: 6px 10px;
+    font-size: 0.8rem;
+  }
+
+  .log {
+    display: none;
   }
 }
