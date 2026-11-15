@@ -216,7 +216,7 @@ export class AirShow {
   /**
    * Delivers an aimed shot with the side's own helicopter, B-2 or B-52: the helicopter swoops to the
    * board edge and fires a missile, a bomber makes a run toward the opponent's side and drops on the
-   * square. Resolves at impact, `ms` from now. Returns null when that bomber is already past the square
+   * square. Resolves at impact, `ms` from now. Returns null when that bomber is already past its release point
    * (it never turns back), so the caller can use the cannon instead.
    */
   deliver(by: Delivery, team: Team, board: BoardId, r: number, c: number, ms: number): Promise<void> | null {
@@ -227,8 +227,10 @@ export class AirShow {
     const impact = () => new Promise<void>((resolve) => setTimeout(resolve, ms))
     if (!to || !grid) return impact()
     const flying = this.planes.find((p) => p.team === team && p.kind === by && !p.down)
-    const ahead = (p: Plane) => (p.x - to.x) * forward(team) > 0
-    if (by !== 'heli' && flying && ahead(flying)) return null
+    const dir = { x: forward(team), y: rand(-0.25, 0.25) }
+    const v = SPEED[by] * this.scale() * 2.5
+    const release = { x: to.x - dir.x * v * BOMB_FALL_S * 0.5, y: to.y - dir.y * v * BOMB_FALL_S * 0.5 }
+    if (by !== 'heli' && flying && (flying.x - release.x) * dir.x > 0) return null
     const plane = flying ?? this.newPlane(by, team, t, this.entry(team, to.y))
     plane.born = t
     if (by === 'heli') {
@@ -239,9 +241,6 @@ export class AirShow {
       this.sfx('heli', 1, playHelicopter)
     } else {
       const drop = Math.max(0.2, hitAt - BOMB_FALL_S)
-      const dir = { x: forward(team), y: rand(-0.25, 0.25) }
-      const v = SPEED[by] * this.scale() * 2.5
-      const release = { x: to.x - dir.x * v * BOMB_FALL_S * 0.5, y: to.y - dir.y * v * BOMB_FALL_S * 0.5 }
       const from = { x: plane.x, y: plane.y }
       const exitX = team === 'player' ? this.w + 80 : -80
       const out = Math.abs(exitX - release.x) / v
