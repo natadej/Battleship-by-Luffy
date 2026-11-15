@@ -3,11 +3,10 @@ import type { CSSProperties } from 'react'
 const SPARKS = [0, 60, 120, 180, 240, 300]
 const DROPS = [-40, -15, 10, 35]
 
-/** One-shot animation played in a cell when a shell lands: a shell drops in, then explodes or splashes. */
+/** One-shot animation played in a cell when a rocket lands: an explosion on a hit, a splash on a miss. */
 export function ShotFx({ hit }: { hit: boolean }) {
   return (
     <span className={`fx ${hit ? 'fx-hit' : 'fx-miss'}`} aria-hidden="true">
-      <span className="fx-shell" />
       {hit ? (
         <>
           <span className="fx-flash" />
