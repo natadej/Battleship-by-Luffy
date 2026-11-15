@@ -300,6 +300,7 @@ export default function App() {
   function start() {
     unlockAudio()
     dispatch({ type: 'start', enemy: randomBoard(), level })
+    setNow(Date.now())
     setRaidAt(Date.now() + RAID_MS)
     setLastAiShot(null)
     setLastPlayerShot(null)
