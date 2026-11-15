@@ -1057,8 +1057,8 @@ kbd {
   }
 }
 
-/* Air battle canvas, fleet health and air-raid countdown. */
-.air-layer {
+/* Bubble canvas and fleet health. */
+.sea-layer {
   position: fixed;
   inset: 0;
   z-index: 40;
