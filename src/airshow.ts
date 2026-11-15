@@ -40,6 +40,8 @@ interface Plane {
   heading: number
   hp: number
   nextFire: number
+  /** Air-raid strike jet: can be shot down but doesn't count toward FLEET. */
+  raider?: boolean
   strike?: { at: number; to: Pt; hit: boolean; dropped?: boolean }
   down?: { at: number; vx: number; vy: number; spin: number }
 }
@@ -230,8 +232,9 @@ export class AirShow {
         route: (age) => lerp(start, finish, (age * v) / far),
         ...start,
         heading: a,
-        hp: Infinity,
+        hp: HP.gripen,
         nextFire: Infinity,
+        raider: true,
         strike: { at: t + approach, to, hit: tg.hit },
       })
       end = Math.max(end, approach + fall)
@@ -356,7 +359,7 @@ export class AirShow {
     this.shots = this.shots.filter((s) => t - s.t0 < s.dur)
     for (const s of done) {
       s.land?.()
-      if (s.target && !s.target.down && s.target.hp !== Infinity && Math.random() < s.hitChance) this.damage(s.target, t, s.power)
+      if (s.target && !s.target.down && Math.random() < s.hitChance) this.damage(s.target, t, s.power)
       else if (s.gun && !s.gun.downUntil && Math.random() < s.hitChance) this.damageGun(s.gun, t)
       else if (!s.land) this.puff(s.kind === 'tracer' ? 'flak' : 'blast', s.to.x, s.to.y, 0.35, s.kind === 'tracer' ? 5 : 12)
     }
@@ -366,7 +369,7 @@ export class AirShow {
   private spawn(t: number) {
     const slow = this.calm ? 2 : 1
     for (const team of ['player', 'enemy'] as Team[]) {
-      const live = (...kinds: Kind[]) => this.planes.filter((p) => p.team === team && !p.down && p.hp !== Infinity && kinds.includes(p.kind)).length
+      const live = (...kinds: Kind[]) => this.planes.filter((p) => p.team === team && !p.down && !p.raider && kinds.includes(p.kind)).length
       const due = (key: string, gap: number) => {
         if (t < this.next[`${key}-${team}`]) return false
         this.next[`${key}-${team}`] = t + gap * slow
@@ -456,7 +459,7 @@ export class AirShow {
 
   /** Live, on-screen enemy aircraft: helicopters or everything else. */
   private foePlanes(team: Team, helis: boolean): Plane[] {
-    return this.planes.filter((p) => p.team !== team && !p.down && p.hp !== Infinity && this.onScreen(p) && (p.kind === 'heli') === helis)
+    return this.planes.filter((p) => p.team !== team && !p.down && this.onScreen(p) && (p.kind === 'heli') === helis)
   }
 
   private foeGuns(team: Team): Gun[] {
@@ -699,7 +702,7 @@ export class AirShow {
 
   /** Small health bar above each live aircraft. */
   private drawHealth(p: Plane, s: number) {
-    if (p.down || p.hp === Infinity || !this.onScreen(p)) return
+    if (p.down || !this.onScreen(p)) return
     const { ctx } = this
     const k = Math.max(0, p.hp / HP[p.kind])
     const w = 28 * s
