@@ -967,6 +967,17 @@ kbd {
     padding: 10px 8px;
   }
 
+  /* Size each panel to its grid so a long weapon bar wraps instead of widening the page. */
+  .board-panel .bar-row {
+    width: 0;
+    min-width: 100%;
+  }
+
+  .phase-playing .weapon-bar {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+
   .grid {
     --cell: min(calc((50vw - 70px) / 10), calc((100dvh - 300px) / 10), 46px);
     grid-template-columns: 16px repeat(10, var(--cell));
@@ -1007,6 +1018,17 @@ kbd {
 
   .board-panel {
     padding: 10px 8px;
+  }
+
+  /* Size each panel to its grid so a long weapon bar wraps instead of widening the page. */
+  .board-panel .bar-row {
+    width: 0;
+    min-width: 100%;
+  }
+
+  .phase-playing .weapon-bar {
+    flex-wrap: wrap;
+    row-gap: 6px;
   }
 
   .grid {

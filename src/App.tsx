@@ -557,9 +557,11 @@ export default function App() {
           : winner === 'draw'
             ? 'A draw! Both fleets sank together.'
             : 'Oh no! The enemy sank your ships. Try again!'
-        : notice
-          ? notice
-          : healing
+        : aiFiring
+          ? `Watch out! The enemy is firing a ${WEAPON_INFO[aiFiring].name.toLowerCase()} ${WEAPON_ICON[aiFiring]}`
+          : notice
+            ? notice
+            : healing
             ? healShip
               ? `Tap a safe spot for your ${healShip.name}.`
               : 'Tap a hurt ship to fix it.'
@@ -567,7 +569,7 @@ export default function App() {
               ? 'Fire! 🔥'
               : turn === 'player'
                 ? `Your turn! ${WEAPON_ICON[weapon]} Tap the red sea to fire your ${WEAPON_INFO[weapon].name.toLowerCase()}.`
-                : `Watch out! The enemy is firing ${aiFiring ? `a ${WEAPON_INFO[aiFiring].name.toLowerCase()} ${WEAPON_ICON[aiFiring]}` : '…'}`
+                : 'Watch out! The enemy is aiming…'
 
   return (
     <main className={`app phase-${phase}`}>
