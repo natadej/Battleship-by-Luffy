@@ -4,6 +4,7 @@ interface Props {
   id: string
   length: number
   orientation: Orientation
+  sunk?: boolean
 }
 
 const U = 100 // one cell in SVG units
@@ -28,7 +29,7 @@ function Details({ id, length }: { id: string; length: number }) {
     case 'carrier':
       return (
         <g>
-          <line x1={40} y1={50} x2={w - 70} y2={50} className="ship-runway" />
+          <line x1={40} y1={50} x2={w - 100} y2={50} className="ship-runway" />
           <rect x={w - 200} y={20} width={70} height={18} rx={4} className="ship-detail" />
           <rect x={60} y={28} width={60} height={12} rx={3} className="ship-turret" />
           <rect x={160} y={60} width={60} height={12} rx={3} className="ship-turret" />
@@ -57,8 +58,36 @@ function Details({ id, length }: { id: string; length: number }) {
   }
 }
 
+/** A cartoon face near the bow: blinking eyes and a smile, or X eyes once sunk. */
+function Face({ x, sunk }: { x: number; sunk?: boolean }) {
+  if (sunk)
+    return (
+      <g className="ship-face">
+        {[x - 11, x + 11].map((cx) => (
+          <path key={cx} d={`M ${cx - 6} 36 l 12 12 M ${cx + 6} 36 l -12 12`} className="ship-x" />
+        ))}
+        <path d={`M ${x - 10} 64 q 10 -8 20 0`} className="ship-mouth" />
+      </g>
+    )
+  return (
+    <g className="ship-face">
+      <g className="ship-eyes">
+        {[x - 11, x + 11].map((cx) => (
+          <g key={cx}>
+            <circle cx={cx} cy={42} r={9} className="ship-eye" />
+            <circle cx={cx + 2} cy={43} r={4.5} className="ship-pupil" />
+          </g>
+        ))}
+      </g>
+      <path d={`M ${x - 12} 58 q 12 12 24 0`} className="ship-mouth" />
+      <circle cx={x - 21} cy={58} r={4} className="ship-cheek" />
+      <circle cx={x + 21} cy={58} r={4} className="ship-cheek" />
+    </g>
+  )
+}
+
 /** A top-down ship drawn horizontally (bow to the right) and mirrored onto the diagonal when vertical. */
-export function ShipSprite({ id, length, orientation }: Props) {
+export function ShipSprite({ id, length, orientation, sunk }: Props) {
   const w = length * U
   const [top, bottom] = id === 'submarine' ? [30, 70] : id === 'carrier' ? [14, 86] : [20, 80]
   const vertical = orientation === 'V'
@@ -73,6 +102,7 @@ export function ShipSprite({ id, length, orientation }: Props) {
         <path d={hullPath(w, top, bottom)} className="ship-hull" />
         <path d={hullPath(w, top + 8, bottom - 8)} className="ship-deck" />
         <Details id={id} length={length} />
+        <Face x={w - 62} sunk={sunk} />
       </g>
     </svg>
   )

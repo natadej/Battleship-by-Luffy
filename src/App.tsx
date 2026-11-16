@@ -1,4 +1,4 @@
-import { type PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
+import { type ReactNode, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { SHOT_MS } from './artillery'
 import { FleetStatus } from './components/FleetStatus'
 import { Grid } from './components/Grid'
@@ -41,6 +41,7 @@ import {
 import { type ScoreEntry, saveName, savedName, submitScore } from './leaderboard'
 import { isMuted, playExplosion, playReward, playSplash, setMuted, unlockAudio } from './sound'
 import './App.css'
+import type { CSSProperties } from 'react'
 
 /** Pause between the player's impact and the enemy starting to aim. */
 const AI_PAUSE_MS = 250
@@ -92,6 +93,58 @@ function HealthBar({ value, label }: { value: number; label: string }) {
   )
 }
 
+const WEAPON_ICON: Record<Weapon, string> = { missile: '🚀', nuke: '☢️', mg: '🔫', b52: '✈️' }
+
+/** One side's weapons. The player's can be picked; the enemy's light up when it fires one. */
+function ArsenalBar({
+  side,
+  arsenal,
+  active,
+  onPick,
+  children,
+}: {
+  side: 'player' | 'enemy'
+  arsenal: Record<Special, number>
+  active: Weapon | null
+  onPick?: (w: Weapon) => void
+  children?: ReactNode
+}) {
+  return (
+    <div className={`weapon-bar bar-${side}`} role={onPick ? 'radiogroup' : 'group'} aria-label={side === 'player' ? 'Your weapons' : 'Enemy weapons'}>
+      {WEAPON_ORDER.map((w) => {
+        const left = w === 'missile' ? Infinity : arsenal[w as Special]
+        return (
+          <button
+            key={w}
+            type="button"
+            role={onPick ? 'radio' : undefined}
+            aria-checked={onPick ? active === w : undefined}
+            aria-label={`${WEAPON_INFO[w].name}, ${left === Infinity ? 'unlimited' : `${left} left`}`}
+            className={`weapon weapon-${w} ${active === w ? 'on' : ''} ${left ? '' : 'empty'}`}
+            disabled={!left || !onPick}
+            title={`${WEAPON_INFO[w].name}: ${WEAPON_INFO[w].effect}`}
+            onClick={() => onPick?.(w)}
+          >
+            <span className="weapon-icon" aria-hidden="true">
+              {WEAPON_ICON[w]}
+            </span>
+            <span className="weapon-name">{WEAPON_INFO[w].name}</span>
+            <small>{left === Infinity ? '∞' : `×${left}`}</small>
+          </button>
+        )
+      })}
+      {children}
+    </div>
+  )
+}
+
+const CONFETTI = Array.from({ length: 36 }, (_, i) => ({
+  x: (i * 37) % 100,
+  delay: ((i * 13) % 20) / 10,
+  hue: (i * 47) % 360,
+  spin: (i % 2 ? 1 : -1) * (360 + ((i * 53) % 360)),
+}))
+
 /** Running totals for a campaign: levels 1 to 5 played in order, scores added up. */
 type Campaign = { total: number; shots: number; hits: number; assisted: boolean }
 const NEW_CAMPAIGN: Campaign = { total: 0, shots: 0, hits: 0, assisted: false }
@@ -120,6 +173,8 @@ export default function App() {
   const [notice, setNotice] = useState<string | null>(null)
   /** Hearts bubbling up from a healing box that just dropped or was picked up. */
   const [burst, setBurst] = useState<{ board: 'player' | 'enemy'; at: Coord; key: number } | null>(null)
+  /** The weapon the enemy is firing right now, lit up on its weapon bar. */
+  const [aiFiring, setAiFiring] = useState<Weapon | null>(null)
   const [fullscreen, setFullscreen] = useState(() => typeof document !== 'undefined' && !!document.fullscreenElement)
 
   const { phase, player, enemy, turn, winner, level } = state
@@ -174,7 +229,7 @@ export default function App() {
     const at = crateSpot(board)
     dispatch({ type: 'drop', board: side, at })
     hearts(side, at)
-    setNotice(side === 'enemy' ? 'A healing box dropped in enemy waters! Shoot it to collect it.' : 'A healing box dropped on your board! The enemy can shoot it to collect it.')
+    setNotice(side === 'enemy' ? '💝 A healing box fell into enemy waters! Shoot it to grab it!' : '💝 A healing box fell near your ships! Watch out, the enemy wants it too!')
   }, [hearts])
 
   useEffect(() => {
@@ -204,6 +259,7 @@ export default function App() {
       let cells = footprint(weapon, coord, s.player)
       pending.current.ai = coord
       setInFlight('ai')
+      setAiFiring(weapon)
       await launch('ai', weapon, coord, cells)
       pending.current.ai = null
       if (cancelled) return
@@ -216,16 +272,18 @@ export default function App() {
       setLastAiShot(coord)
       if (onCrate(cells, now.crates.player)) {
         hearts('player', now.crates.player!)
-        setNotice('The enemy picked up the healing box on your board!')
+        setNotice('Oh no! The enemy grabbed the healing box!')
       }
       dispatch({ type: 'aiFire', coord, weapon, cells })
       setInFlight(null)
+      setAiFiring(null)
       setTimeout(maybeDrop, 500)
     }, AI_PAUSE_MS)
     return () => {
       cancelled = true
       clearTimeout(t)
       setInFlight(null)
+      setAiFiring(null)
     }
     // Reads the latest board through stateRef.
   }, [phase, turn, launch, hearts, maybeDrop])
@@ -391,7 +449,7 @@ export default function App() {
     setLastPlayerShot(coord)
     if (onCrate(cells, s.crates.enemy)) {
       hearts('enemy', s.crates.enemy!)
-      setNotice('Healing box collected! Use it on a damaged ship.')
+      setNotice('💖 You got the healing box! Tap ❤️ Heal to fix a ship.')
     }
     dispatch({ type: 'playerFire', coord, weapon: w, cells })
     setInFlight(null)
@@ -491,31 +549,33 @@ export default function App() {
   const status =
     phase === 'placement'
       ? fleetPlaced(player)
-        ? `Fleet ready. Level ${level} of 5: ${levelInfo.name}.`
-        : 'Tap squares to place your ships, or Randomize. Drag a ship to move it, tap it to rotate.'
+        ? `Ships ready! Level ${level}: beat ${levelInfo.name}!`
+        : 'Tap the sea to put your ships, or press 🎲 Randomize. Drag a ship to move it, tap it to turn it.'
       : phase === 'over'
         ? winner === 'player'
-          ? 'Victory! You sank the enemy fleet.'
+          ? '🎉 You win! You sank every enemy ship!'
           : winner === 'draw'
-            ? 'Draw! Both fleets went down together.'
-            : 'Defeat. The enemy sank your fleet.'
-        : notice
-          ? notice
-          : healing
+            ? 'A draw! Both fleets sank together.'
+            : 'Oh no! The enemy sank your ships. Try again!'
+        : aiFiring
+          ? `Watch out! The enemy is firing a ${WEAPON_INFO[aiFiring].name.toLowerCase()} ${WEAPON_ICON[aiFiring]}`
+          : notice
+            ? notice
+            : healing
             ? healShip
-              ? `Tap an unshot spot for the ${healShip.name}.`
-              : 'Tap a damaged ship to repair it.'
+              ? `Tap a safe spot for your ${healShip.name}.`
+              : 'Tap a hurt ship to fix it.'
             : inFlight === 'player'
-              ? 'Fire!'
+              ? 'Fire! 🔥'
               : turn === 'player'
-                ? `Your turn. Fire your ${WEAPON_INFO[weapon].name.toLowerCase()} on enemy waters.`
-            : 'Incoming! The enemy is aiming…'
+                ? `Your turn! ${WEAPON_ICON[weapon]} Tap the red sea to fire your ${WEAPON_INFO[weapon].name.toLowerCase()}.`
+                : 'Watch out! The enemy is aiming…'
 
   return (
     <main className={`app phase-${phase}`}>
       <div className="rotate-overlay" role="alertdialog" aria-label="Rotate your phone">
         <div className="rotate-phone" aria-hidden="true" />
-        <p>Turn your phone sideways to play.</p>
+        <p>Turn your phone sideways to play! 🔄</p>
         {'requestFullscreen' in document.documentElement && (
           <button type="button" onClick={goLandscape}>
             Play in landscape
@@ -524,7 +584,9 @@ export default function App() {
       </div>
 
       <header>
-        <h1>Battleship</h1>
+        <h1>
+          <span aria-hidden="true">⚓</span> Battleship
+        </h1>
         <div className="header-actions">
           {!fullscreen && 'requestFullscreen' in document.documentElement && (
             <button type="button" className="chip" onClick={enterFullscreen}>
@@ -555,10 +617,10 @@ export default function App() {
         <section className="controls" aria-label="Fleet placement">
           <div className="actions">
             <button type="button" onClick={randomize}>
-              Randomize
+              🎲 Randomize
             </button>
             <button type="button" onClick={clearBoard}>
-              Clear
+              🧹 Clear
             </button>
           </div>
           <p className="level-hint">
@@ -567,9 +629,17 @@ export default function App() {
             {campaign.total > 0 && ` Campaign total so far: ${campaign.total}.`}
           </p>
           <button type="button" className="primary start-btn" disabled={!fleetPlaced(player)} onClick={start}>
-            Start battle
+            ⚔️ Start battle!
           </button>
         </section>
+      )}
+
+      {phase === 'over' && cleared && (
+        <div className="confetti" aria-hidden="true">
+          {CONFETTI.map((p, i) => (
+            <i key={i} style={{ '--x': `${p.x}%`, '--d': `${p.delay}s`, '--h': p.hue, '--spin': `${p.spin}deg` } as CSSProperties} />
+          ))}
+        </div>
       )}
 
       {phase === 'over' && (
@@ -629,35 +699,41 @@ export default function App() {
       <section className="boards">
         <div className="board-panel side-player">
           <h2>
-            Your fleet
+            <span className="side-name">🔵 Your fleet</span>
             {phase !== 'placement' && <HealthBar value={healthOf(player)} label="Your fleet health" />}
-            {phase !== 'placement' && (
-              <span className={`ai-mode ai-${level === 1 ? 'hunt' : mode}`} title={levelInfo.strategy}>
-                Lv {level} {levelInfo.name}: {level === 1 ? 'Random' : level === 5 && mode === 'hunt' ? 'Calculating' : mode === 'hunt' ? 'Hunting' : 'Targeting'}
-              </span>
-            )}
           </h2>
-          {phase === 'playing' && state.kits.player && (
-            <div className="kit-bar">
-              <span className="crate-icon" aria-hidden="true" />
-              {healing ? (
-                <>
-                  {healShip && (
-                    <button type="button" onClick={() => setHealing({ ...healing, o: healing.o === 'H' ? 'V' : 'H' })}>
-                      Rotate
+          <div className="bar-row">
+            {phase === 'playing' && (
+              <ArsenalBar side="player" arsenal={state.arsenal.player} active={weapon} onPick={setWeapon}>
+                {state.kits.player &&
+                  (healing ? (
+                    <span className="kit-actions">
+                      {healShip && (
+                        <button type="button" className="kit-btn" onClick={() => setHealing({ ...healing, o: healing.o === 'H' ? 'V' : 'H' })}>
+                          🔄 Turn
+                        </button>
+                      )}
+                      <button type="button" className="kit-btn" onClick={() => setHealing(null)}>
+                        ✖ Cancel
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="weapon kit-btn heal-ready"
+                      disabled={!myTurn || !player.ships.some((p) => canHeal(player, p))}
+                      title="Fix a hurt ship and move it"
+                      onClick={() => setHealing({ id: null, o: 'H' })}
+                    >
+                      <span className="weapon-icon" aria-hidden="true">
+                        ❤️
+                      </span>
+                      <span className="weapon-name">Heal</span>
                     </button>
-                  )}
-                  <button type="button" onClick={() => setHealing(null)}>
-                    Cancel
-                  </button>
-                </>
-              ) : (
-                <button type="button" className="primary" disabled={!myTurn || !player.ships.some((p) => canHeal(player, p))} onClick={() => setHealing({ id: null, o: 'H' })}>
-                  Use healing kit
-                </button>
-              )}
-            </div>
-          )}
+                  ))}
+              </ArsenalBar>
+            )}
+          </div>
           <div className="grid-wrap">
             <Grid
               board={player}
@@ -674,67 +750,67 @@ export default function App() {
               draggingId={dragId}
             />
           </div>
-          {phase !== 'placement' && <FleetStatus board={player} title="Your ships" />}
+          {phase !== 'placement' ? <FleetStatus board={player} title="Your ships" /> : <div />}
         </div>
 
         <div className="board-panel side-enemy">
-            <h2>
-              Enemy waters
-              {phase !== 'placement' && <HealthBar value={healthOf(enemy)} label="Enemy fleet health" />}
-              {phase === 'playing' && (
-                <button
-                  type="button"
-                  className={`shade-toggle ${shade ? 'on' : ''}`}
-                  aria-pressed={shade}
-                  title="Orange glow where enemy ships are most likely, from the shots so far. Halves your score."
-                  onClick={toggleShade}
-                >
-                  Probability shade {shade ? 'on' : 'off'}
-                </button>
-              )}
-            </h2>
-            {phase === 'playing' && (
-              <div className="weapon-bar" role="radiogroup" aria-label="Weapon">
-                {WEAPON_ORDER.map((w) => {
-                  const left = w === 'missile' ? Infinity : state.arsenal.player[w as Special]
-                  return (
-                    <button
-                      key={w}
-                      type="button"
-                      role="radio"
-                      aria-checked={weapon === w}
-                      className={`weapon weapon-${w} ${weapon === w ? 'on' : ''}`}
-                      disabled={!left}
-                      title={WEAPON_INFO[w].effect}
-                      onClick={() => setWeapon(w)}
-                    >
-                      {WEAPON_INFO[w].name}
-                      <small>{left === Infinity ? '∞' : `×${left}`}</small>
-                    </button>
-                  )
-                })}
-              </div>
+          <h2>
+            <span className="side-name">🔴 Enemy fleet</span>
+            {phase !== 'placement' && <HealthBar value={healthOf(enemy)} label="Enemy fleet health" />}
+            {phase !== 'placement' && (
+              <span className={`ai-mode ai-${level === 1 ? 'hunt' : mode}`} title={levelInfo.strategy}>
+                Lv {level} {levelInfo.name}
+                {phase === 'playing' && `: ${level === 1 ? 'Random' : level === 5 && mode === 'hunt' ? 'Thinking' : mode === 'hunt' ? 'Hunting' : 'Targeting'}`}
+              </span>
             )}
-            <div className="grid-wrap">
-              <Grid
-                board={enemy}
-                crate={phase === 'playing' ? state.crates.enemy : null}
-                burst={burst?.board === 'enemy' ? burst : null}
-                area={aim && myTurn ? aimArea(weapon, aim) : null}
-                onCellHover={phase === 'playing' ? setAim : undefined}
-                label="Enemy board"
-                showShips={phase === 'over' ? 'all' : 'sunk'}
-                variant="enemy"
-                interactive={phase === 'playing'}
-                queued={queued}
-                lastShot={lastPlayerShot}
-                onCellClick={fireAt}
-                heat={heat}
-              />
-            </div>
-            {phase !== 'placement' && <FleetStatus board={enemy} title="Enemy ships" />}
+          </h2>
+          <div className="bar-row">
+            {phase === 'playing' && (
+              <ArsenalBar side="enemy" arsenal={state.arsenal.ai} active={aiFiring}>
+                {state.kits.ai && (
+                  <span className="weapon kit-btn enemy-kit" title="The enemy has a healing kit">
+                    <span className="weapon-icon" aria-hidden="true">
+                      ❤️
+                    </span>
+                    <span className="weapon-name">Heal</span>
+                  </span>
+                )}
+              </ArsenalBar>
+            )}
           </div>
+          <div className="grid-wrap">
+            <Grid
+              board={enemy}
+              crate={phase === 'playing' ? state.crates.enemy : null}
+              burst={burst?.board === 'enemy' ? burst : null}
+              area={aim && myTurn ? aimArea(weapon, aim) : null}
+              onCellHover={phase === 'playing' ? setAim : undefined}
+              label="Enemy board"
+              showShips={phase === 'over' ? 'all' : 'sunk'}
+              variant="enemy"
+              interactive={phase === 'playing'}
+              queued={queued}
+              lastShot={lastPlayerShot}
+              onCellClick={fireAt}
+              heat={heat}
+            />
+          </div>
+          {phase !== 'placement' ? <FleetStatus board={enemy} title="Enemy ships" /> : <div />}
+        </div>
       </section>
+      {phase === 'playing' && (
+        <div className="extras">
+          <button
+            type="button"
+            className={`shade-toggle ${shade ? 'on' : ''}`}
+            aria-pressed={shade}
+            title="Orange glow where enemy ships are most likely, from the shots so far. Halves your score."
+            onClick={toggleShade}
+          >
+            🔮 Hint glow {shade ? 'on' : 'off'}
+          </button>
+        </div>
+      )}
 
       {phase !== 'over' && <SeaLayer />}
       {showBoard && <LeaderboardDialog onClose={() => setShowBoard(false)} />}

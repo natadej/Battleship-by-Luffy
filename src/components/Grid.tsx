@@ -139,7 +139,7 @@ export function Grid({
         return (
           <div
             key={ship.id}
-            className={`ship-sprite ${sunk ? 'sunk' : ''} ${vertical ? 'vertical' : ''} ${onShipPointerDown ? 'grabbable' : ''} ${draggingId === ship.id ? 'dragging' : ''}`}
+            className={`ship-sprite ship-${variant} ${sunk ? 'sunk' : ''} ${vertical ? 'vertical' : ''} ${onShipPointerDown ? 'grabbable' : ''} ${draggingId === ship.id ? 'dragging' : ''}`}
             data-ship={ship.id}
             onPointerDown={onShipPointerDown ? (e) => onShipPointerDown(ship, e) : undefined}
             style={{
@@ -148,7 +148,7 @@ export function Grid({
               animationDelay: `${-ship.length * 0.7}s`,
             }}
           >
-            <ShipSprite id={ship.id} length={ship.length} orientation={vertical ? 'V' : 'H'} />
+            <ShipSprite id={ship.id} length={ship.length} orientation={vertical ? 'V' : 'H'} sunk={sunk} />
           </div>
         )
       })}
