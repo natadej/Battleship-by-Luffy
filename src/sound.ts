@@ -248,3 +248,22 @@ export function playNuke() {
   const roar = noiseBurst(ac, t, 3.8, 'lowpass', 3500, 1)
   roar.frequency.exponentialRampToValueAtTime(50, t + 3.8)
 }
+
+/** Reward chime: a bright rising arpeggio with a shimmer on top. */
+export function playReward() {
+  const ac = audio()
+  if (!ac || muted) return
+  const t = ac.currentTime
+  const notes = [523.25, 659.25, 783.99, 1046.5, 1318.51]
+  notes.forEach((hz, i) => {
+    const at = t + i * 0.08
+    for (const [type, mult, peak] of [['triangle', 1, 0.32], ['sine', 2, 0.1]] as const) {
+      const o = ac.createOscillator()
+      o.type = type
+      o.frequency.value = hz * mult
+      o.connect(envelope(ac, at, peak, i === notes.length - 1 ? 1.1 : 0.45))
+      o.start(at)
+      o.stop(at + 1.2)
+    }
+  })
+}

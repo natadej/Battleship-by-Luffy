@@ -790,12 +790,13 @@ kbd {
   font-size: 1rem;
 }
 
-/* Phones: landscape only. Portrait gets a rotate prompt. Tablets and unfolded foldables (wider than 600px) play either way. */
+/* Tall, narrow phones: landscape only. Portrait gets a rotate prompt. Tablets and unfolded foldables
+   (any screen squarer than 2:3) play upright with both boards side by side. */
 .rotate-overlay {
   display: none;
 }
 
-@media (orientation: portrait) and (max-width: 600px) and (pointer: coarse) {
+@media (orientation: portrait) and (max-width: 600px) and (max-aspect-ratio: 2/3) and (pointer: coarse) {
   .rotate-overlay {
     position: fixed;
     inset: 0;
@@ -935,11 +936,27 @@ kbd {
   }
 }
 
-/* Tablets and unfolded foldables in portrait: both boards side by side, sized to the width. */
-@media (orientation: portrait) and (min-width: 601px) and (max-width: 1100px) {
+/* Tablets and unfolded foldables held upright: both boards side by side, sized to the width. */
+@media (orientation: portrait) and (min-aspect-ratio: 2/3) and (max-width: 1100px) {
   .app {
     max-width: none;
     padding: 12px 10px 20px;
+  }
+
+  header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    column-gap: 16px;
+  }
+
+  .header-actions {
+    position: static;
+  }
+
+  .status {
+    flex-basis: 100%;
   }
 
   .boards {
@@ -951,7 +968,49 @@ kbd {
   }
 
   .grid {
-    --cell: min(calc((50vw - 70px) / 10), 46px);
+    --cell: min(calc((50vw - 70px) / 10), calc((100dvh - 300px) / 10), 46px);
+    grid-template-columns: 16px repeat(10, var(--cell));
+    grid-template-rows: 16px repeat(10, var(--cell));
+  }
+}
+
+/* Tablets and foldables held sideways: keep the boards side by side instead of stacking them. */
+@media (orientation: landscape) and (min-height: 521px) and (max-width: 1100px) {
+  .app {
+    max-width: none;
+    padding: 10px 10px 16px;
+  }
+
+  header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    column-gap: 16px;
+  }
+
+  .header-actions {
+    position: static;
+  }
+
+  .status {
+    flex-basis: 100%;
+  }
+
+  .fleet-status {
+    display: none;
+  }
+
+  .boards {
+    flex-wrap: nowrap;
+  }
+
+  .board-panel {
+    padding: 10px 8px;
+  }
+
+  .grid {
+    --cell: min(calc((50vw - 70px) / 10), calc((100dvh - 290px) / 10), 46px);
     grid-template-columns: 16px repeat(10, var(--cell));
     grid-template-rows: 16px repeat(10, var(--cell));
   }
@@ -1093,7 +1152,62 @@ kbd {
   place-items: center;
   pointer-events: none;
   z-index: 3;
-  animation: bob 2.4s ease-in-out infinite;
+  animation:
+    crate-fall 0.9s cubic-bezier(0.3, 0, 0.5, 1.4),
+    bob 2.4s ease-in-out 0.9s infinite;
+}
+
+@keyframes crate-fall {
+  0% {
+    transform: translateY(-300%) scale(0.4);
+    opacity: 0;
+  }
+  60% {
+    opacity: 1;
+  }
+  100% {
+    transform: none;
+  }
+}
+
+/* Hearts in bubbles rising from a healing box. */
+.heart-burst {
+  position: relative;
+  z-index: 6;
+  pointer-events: none;
+}
+
+.heart-burst span {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin: -12px 0 0 -12px;
+  border-radius: 50%;
+  color: #ff4f7b;
+  font-size: 15px;
+  line-height: 1;
+  background: radial-gradient(circle at 35% 30%, rgb(255 255 255 / 0.85), rgb(255 200 220 / 0.35) 45%, rgb(255 120 160 / 0.15) 70%);
+  box-shadow: 0 0 6px rgb(255 120 160 / 0.7);
+  opacity: 0;
+  animation: heart-rise 1.6s ease-out calc(var(--i) * 0.1s) forwards;
+}
+
+@keyframes heart-rise {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.3);
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--dx), var(--dy)) scale(1.2);
+  }
 }
 
 .crate-icon {

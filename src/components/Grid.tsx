@@ -23,10 +23,22 @@ interface Props {
   draggingId?: string | null
   /** Where the healing box sits. */
   crate?: Coord | null
+  /** Hearts bubbling up from this square (a healing box dropping or being picked up). */
+  burst?: { at: Coord; key: number } | null
   /** Squares the chosen weapon will cover around the hovered square. */
   area?: Coord[] | null
 }
 
+/** Each heart's drift sideways and rise, in px. */
+const HEARTS = [
+  [-30, -70],
+  [-14, -95],
+  [2, -60],
+  [16, -100],
+  [32, -75],
+  [-24, -40],
+  [24, -45],
+]
 const range = Array.from({ length: SIZE }, (_, i) => i)
 const at = (row: number, col: number): CSSProperties => ({ gridRow: row, gridColumn: col })
 
@@ -45,6 +57,7 @@ export function Grid({
   onShipPointerDown,
   draggingId,
   crate,
+  burst,
   area,
 }: Props) {
   const visibleShips = board.ships.filter((s) => showShips === 'all' || isSunk(board, s))
@@ -106,6 +119,16 @@ export function Grid({
       {crate && (
         <div className="crate" style={at(crate.r + 2, crate.c + 2)} aria-label={`Healing box at ${coordLabel(crate)}`}>
           <span className="crate-icon" aria-hidden="true" />
+        </div>
+      )}
+
+      {burst && (
+        <div key={burst.key} className="heart-burst" style={at(burst.at.r + 2, burst.at.c + 2)} aria-hidden="true">
+          {HEARTS.map(([dx, dy], i) => (
+            <span key={i} style={{ '--i': i, '--dx': `${dx}px`, '--dy': `${dy}px` } as CSSProperties}>
+              ♥
+            </span>
+          ))}
         </div>
       )}
 
