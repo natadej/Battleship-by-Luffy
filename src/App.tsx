@@ -347,7 +347,7 @@ export default function App() {
     if (s.phase !== 'playing' || s.enemy.shots[coord.r][coord.c]) return setInFlight(null)
     playShotSound(s.enemy, cells)
     setLastPlayerShot(coord)
-    if (onCrate(cells, s.crates.enemy)) setNotice('You picked up the healing box! Use it on a damaged ship.')
+    if (onCrate(cells, s.crates.enemy)) setNotice('Healing box collected! Use it on a damaged ship.')
     dispatch({ type: 'playerFire', coord, weapon: w, cells })
     setInFlight(null)
   }
@@ -450,8 +450,8 @@ export default function App() {
           ? notice
           : healing
             ? healShip
-              ? `Tap where the ${healShip.name} should go. It must sit on squares that haven't been shot at.`
-              : 'Tap one of your damaged ships to repair it.'
+              ? `Tap an unshot spot for the ${healShip.name}.`
+              : 'Tap a damaged ship to repair it.'
             : inFlight === 'player'
               ? 'Fire!'
               : turn === 'player'

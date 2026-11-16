@@ -1121,6 +1121,38 @@ kbd {
   width: 22px;
 }
 
+@media (orientation: landscape) and (max-height: 520px) {
+  .weapon-bar,
+  .kit-bar {
+    gap: 4px;
+    margin-bottom: 4px;
+  }
+
+  .weapon,
+  .kit-bar button {
+    padding: 2px 8px;
+    font-size: 0.7rem;
+  }
+
+  .kit-bar .crate-icon {
+    width: 16px;
+  }
+
+  /* Keep the status to one line so the boards don't move when it changes. */
+  .phase-playing .status {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Leave room for the weapon and kit bars. */
+  .phase-playing .grid {
+    --cell: min(calc((100dvh - 172px) / 10), calc((50vw - 90px) / 10));
+  }
+}
+
 /* Square tapped early: fires as soon as it's your turn. */
 .grid-enemy .cell.queued::after {
   content: '';
