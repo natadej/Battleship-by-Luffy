@@ -39,7 +39,7 @@ import {
   relocation,
 } from './game/weapons'
 import { type ScoreEntry, saveName, savedName, submitScore } from './leaderboard'
-import { isMuted, playExplosion, playSplash, setMuted, unlockAudio } from './sound'
+import { isMuted, playExplosion, playReward, playSplash, setMuted, unlockAudio } from './sound'
 import './App.css'
 
 /** Pause between the player's impact and the enemy starting to aim. */
@@ -118,6 +118,9 @@ export default function App() {
   /** Using the healing kit: the ship picked (if any) and the way it will face. */
   const [healing, setHealing] = useState<{ id: string | null; o: Orientation } | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  /** Hearts bubbling up from a healing box that just dropped or was picked up. */
+  const [burst, setBurst] = useState<{ board: 'player' | 'enemy'; at: Coord; key: number } | null>(null)
+  const [fullscreen, setFullscreen] = useState(() => typeof document !== 'undefined' && !!document.fullscreenElement)
 
   const { phase, player, enemy, turn, winner, level } = state
   const selected = FLEET.find((s) => s.id === selectedId) ?? null
@@ -131,6 +134,8 @@ export default function App() {
   useEffect(() => {
     stateRef.current = state
   }, [state])
+  /** The round this level's healing box drops in. */
+  const dropRound = useRef(0)
   /** Squares with a rocket on the way. */
   const pending = useRef<{ player: Coord | null; ai: Coord | null }>({ player: null, ai: null })
   const dragRef = useRef<Drag | null>(null)
@@ -140,6 +145,37 @@ export default function App() {
     (side: 'player' | 'ai', weapon: Weapon, coord: Coord, cells: Coord[]) => strike(weapon, side === 'player' ? 'enemy' : 'own', coord, cells, SHOT_MS),
     [],
   )
+
+  const hearts = useCallback((board: 'player' | 'enemy', at: Coord) => {
+    playReward()
+    setBurst({ board, at, key: Date.now() })
+  }, [])
+
+  useEffect(() => {
+    if (!burst) return
+    const t = setTimeout(() => setBurst(null), 1800)
+    return () => clearTimeout(t)
+  }, [burst])
+
+  useEffect(() => {
+    const sync = () => setFullscreen(!!document.fullscreenElement)
+    document.addEventListener('fullscreenchange', sync)
+    return () => document.removeEventListener('fullscreenchange', sync)
+  }, [])
+
+  /** Once per level, at a random round, a healing box drops onto a random board. */
+  const maybeDrop = useCallback(() => {
+    const s = stateRef.current
+    if (s.phase !== 'playing' || s.dropped || s.round < dropRound.current) return
+    const side = Math.random() < 0.5 ? 'player' : 'enemy'
+    const board = s[side]
+    const open = board.shots.some((row, r) => row.some((v, c) => v === null && !shipAt(board, { r, c })))
+    if (!open) return
+    const at = crateSpot(board)
+    dispatch({ type: 'drop', board: side, at })
+    hearts(side, at)
+    setNotice(side === 'enemy' ? 'A healing box dropped in enemy waters! Shoot it to collect it.' : 'A healing box dropped on your board! The enemy can shoot it to collect it.')
+  }, [hearts])
 
   useEffect(() => {
     if (!notice) return
@@ -178,9 +214,13 @@ export default function App() {
       }
       playShotSound(now.player, cells)
       setLastAiShot(coord)
-      if (onCrate(cells, now.crates.player)) setNotice('The enemy picked up the healing box on your board!')
+      if (onCrate(cells, now.crates.player)) {
+        hearts('player', now.crates.player!)
+        setNotice('The enemy picked up the healing box on your board!')
+      }
       dispatch({ type: 'aiFire', coord, weapon, cells })
       setInFlight(null)
+      setTimeout(maybeDrop, 500)
     }, AI_PAUSE_MS)
     return () => {
       cancelled = true
@@ -188,7 +228,7 @@ export default function App() {
       setInFlight(null)
     }
     // Reads the latest board through stateRef.
-  }, [phase, turn, launch])
+  }, [phase, turn, launch, hearts, maybeDrop])
 
   // R rotates the ship being placed.
   useEffect(() => {
@@ -307,7 +347,9 @@ export default function App() {
   function start() {
     unlockAudio()
     const enemyBoard = randomBoard()
-    dispatch({ type: 'start', enemy: enemyBoard, level, crates: { player: crateSpot(player), enemy: crateSpot(enemyBoard) } })
+    dispatch({ type: 'start', enemy: enemyBoard, level })
+    dropRound.current = 3 + Math.floor(Math.random() * 10)
+    if (!document.fullscreenElement && matchMedia('(pointer: coarse)').matches) void enterFullscreen()
     setWeapon('missile')
     setHealing(null)
     setNotice(null)
@@ -347,7 +389,10 @@ export default function App() {
     if (s.phase !== 'playing' || s.enemy.shots[coord.r][coord.c]) return setInFlight(null)
     playShotSound(s.enemy, cells)
     setLastPlayerShot(coord)
-    if (onCrate(cells, s.crates.enemy)) setNotice('Healing box collected! Use it on a damaged ship.')
+    if (onCrate(cells, s.crates.enemy)) {
+      hearts('enemy', s.crates.enemy!)
+      setNotice('Healing box collected! Use it on a damaged ship.')
+    }
     dispatch({ type: 'playerFire', coord, weapon: w, cells })
     setInFlight(null)
   }
@@ -424,6 +469,14 @@ export default function App() {
     )
   }
 
+  async function enterFullscreen() {
+    try {
+      await document.documentElement.requestFullscreen?.()
+    } catch {
+      // Not allowed or not supported (e.g. iPhone Safari).
+    }
+  }
+
   async function goLandscape() {
     try {
       await document.documentElement.requestFullscreen?.()
@@ -473,6 +526,11 @@ export default function App() {
       <header>
         <h1>Battleship</h1>
         <div className="header-actions">
+          {!fullscreen && 'requestFullscreen' in document.documentElement && (
+            <button type="button" className="chip" onClick={enterFullscreen}>
+              ⛶ Full screen
+            </button>
+          )}
           <button type="button" className="chip" onClick={() => setShowBoard(true)}>
             🏆 Leaderboard
           </button>
@@ -609,6 +667,7 @@ export default function App() {
               preview={preview}
               lastShot={lastAiShot}
               crate={phase === 'playing' ? state.crates.player : null}
+              burst={burst?.board === 'player' ? burst : null}
               onCellClick={phase === 'placement' ? handlePlacementClick : healing ? healClick : undefined}
               onCellHover={(phase === 'placement' && !dragId) || healing ? setHover : undefined}
               onShipPointerDown={phase === 'placement' ? grabShip : undefined}
@@ -660,6 +719,7 @@ export default function App() {
               <Grid
                 board={enemy}
                 crate={phase === 'playing' ? state.crates.enemy : null}
+                burst={burst?.board === 'enemy' ? burst : null}
                 area={aim && myTurn ? aimArea(weapon, aim) : null}
                 onCellHover={phase === 'playing' ? setAim : undefined}
                 label="Enemy board"

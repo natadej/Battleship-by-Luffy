@@ -33,6 +33,10 @@ export interface GameState {
   arsenal: { player: Arsenal; ai: Arsenal }
   /** The healing box on each board (`player` = on the player's board, for the AI to collect). */
   crates: { player: Coord | null; enemy: Coord | null }
+  /** Whether this level's one healing box has dropped yet. */
+  dropped: boolean
+  /** Full rounds played this level (one shot each). */
+  round: number
   /** Who is holding an unused healing kit. */
   kits: { player: boolean; ai: boolean }
   /** Squares fired at and squares hit, per shooter (the healing kit turns hits back into water). */
@@ -51,6 +55,7 @@ export type Action =
   | { type: 'playerFire'; coord: Coord; weapon?: Weapon; cells?: Coord[] }
   | { type: 'aiFire'; coord: Coord; weapon?: Weapon; cells?: Coord[] }
   | { type: 'heal'; side: Side; id: string; cells: Coord[] }
+  | { type: 'drop'; board: 'player' | 'enemy'; at: Coord }
   | { type: 'raid'; player: Coord[]; enemy: Coord[] }
   | { type: 'setLevel'; level: Level }
   | { type: 'reset' }
@@ -67,6 +72,8 @@ export const initialState = (): GameState => ({
   raided: { player: [], enemy: [] },
   arsenal: { player: fullArsenal(), ai: fullArsenal() },
   crates: { player: null, enemy: null },
+  dropped: false,
+  round: 0,
   kits: { player: false, ai: false },
   tally: { player: { shots: 0, hits: 0 }, ai: { shots: 0, hits: 0 } },
 })
@@ -142,6 +149,8 @@ export function reducer(state: GameState, action: Action): GameState {
         turn: 'player',
         log: ['Battle stations! Your move.'],
         crates: action.crates ?? { player: null, enemy: null },
+        dropped: !!action.crates,
+        round: 0,
       }
     case 'playerFire': {
       const { coord } = action
@@ -176,11 +185,17 @@ export function reducer(state: GameState, action: Action): GameState {
         crates: v.crates,
         kits: v.kits,
         tally: v.tally,
+        round: state.round + 1,
         turn: 'player',
         phase: won ? 'over' : 'playing',
         winner: won ? 'ai' : null,
         log: [describe('Enemy', coord, v.worst.outcome, v.worst.ship), ...state.log].slice(0, MAX_LOG),
       }
+    }
+    case 'drop': {
+      const { board, at } = action
+      if (state.phase !== 'playing' || state.dropped || !inBounds(at) || state[board].shots[at.r][at.c] !== null) return state
+      return { ...state, dropped: true, crates: { ...state.crates, [board]: at } }
     }
     case 'heal': {
       const { side, id, cells } = action

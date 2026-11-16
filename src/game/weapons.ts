@@ -14,7 +14,7 @@ export const WEAPON_INFO: Record<Weapon, { name: string; effect: string }> = {
 }
 
 /** Specials each side gets per level; missiles are unlimited. */
-export const fullArsenal = (): Arsenal => ({ nuke: 1, mg: 1, b52: 1 })
+export const fullArsenal = (): Arsenal => ({ nuke: 2, mg: 2, b52: 2 })
 
 const isOpen = (board: Board, p: Coord) => inBounds(p) && board.shots[p.r][p.c] === null
 

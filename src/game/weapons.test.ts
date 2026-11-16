@@ -59,10 +59,13 @@ describe('weapons in the reducer', () => {
     const cells = footprint('nuke', { r: 4, c: 4 }, s.enemy)
     s = reducer(s, { type: 'playerFire', coord: { r: 4, c: 4 }, weapon: 'nuke', cells })
     expect(cells.every((p) => s.enemy.shots[p.r][p.c] !== null)).toBe(true)
-    expect(s.arsenal.player.nuke).toBe(0)
+    expect(s.arsenal.player.nuke).toBe(1)
     expect(s.tally.player.shots).toBe(9)
     s = reducer(s, { type: 'aiFire', coord: { r: 0, c: 0 } })
-    expect(reducer(s, { type: 'playerFire', coord: { r: 9, c: 9 }, weapon: 'nuke', cells: [{ r: 9, c: 9 }] })).toBe(s)
+    s = reducer(s, { type: 'playerFire', coord: { r: 9, c: 9 }, weapon: 'nuke', cells: [{ r: 9, c: 9 }] })
+    expect(s.arsenal.player.nuke).toBe(0)
+    s = reducer(s, { type: 'aiFire', coord: { r: 0, c: 1 } })
+    expect(reducer(s, { type: 'playerFire', coord: { r: 9, c: 0 }, weapon: 'nuke', cells: [{ r: 9, c: 0 }] })).toBe(s)
   })
 
   it('the AI uses the same arsenal and footprints', () => {
@@ -71,8 +74,23 @@ describe('weapons in the reducer', () => {
     const cells = footprint('mg', { r: 5, c: 5 }, s.player, seeded(3))
     s = reducer(s, { type: 'aiFire', coord: { r: 5, c: 5 }, weapon: 'mg', cells })
     expect(cells.every((p) => s.player.shots[p.r][p.c] !== null)).toBe(true)
-    expect(s.arsenal.ai.mg).toBe(0)
+    expect(s.arsenal.ai.mg).toBe(1)
     expect(s.tally.ai.shots).toBe(3)
+  })
+
+  it('no box at the start; one drops later and only once', () => {
+    let s = reducer(initialState(), { type: 'setPlayerBoard', board: randomBoard(seeded(1)) })
+    s = reducer(s, { type: 'start', enemy: randomBoard(seeded(2)), level: 3 })
+    expect(s.crates).toEqual({ player: null, enemy: null })
+    s = reducer(s, { type: 'playerFire', coord: { r: 0, c: 0 } })
+    s = reducer(s, { type: 'aiFire', coord: { r: 0, c: 0 } })
+    expect(s.round).toBe(1)
+    const at = crateSpot(s.enemy, seeded(6))
+    s = reducer(s, { type: 'drop', board: 'enemy', at })
+    expect(s.crates.enemy).toEqual(at)
+    expect(reducer(s, { type: 'drop', board: 'player', at: crateSpot(s.player, seeded(7)) })).toBe(s)
+    s = reducer(s, { type: 'playerFire', coord: at })
+    expect(s.kits.player).toBe(true)
   })
 
   it('shooting the healing box collects a kit', () => {
