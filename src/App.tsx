@@ -4,6 +4,7 @@ import { Cannon } from './components/Cannon'
 import { FleetStatus } from './components/FleetStatus'
 import { Grid } from './components/Grid'
 import { SeaLayer } from './components/SeaLayer'
+import { WEAPONS, strike } from './strikes'
 import { LeaderboardDialog, LeaderboardTable } from './components/Leaderboard'
 import { type Level, LEVELS, aiMode, chooseShot } from './game/ai'
 import {
@@ -102,15 +103,14 @@ export default function App() {
   const pending = useRef<{ player: Coord | null; ai: Coord | null }>({ player: null, ai: null })
   const dragRef = useRef<Drag | null>(null)
   const layerRef = useRef<HTMLDivElement>(null)
-  const batteries = useRef<{ player: Battery | null; enemy: Battery | null }>({ player: null, enemy: null })
-  const registerPlayer = useCallback((b: Battery | null) => void (batteries.current.player = b), [])
+  const batteries = useRef<{ enemy: Battery | null }>({ enemy: null })
   const registerEnemy = useCallback((b: Battery | null) => void (batteries.current.enemy = b), [])
 
-  /** Animates the attacker's cannon shot; resolves on impact. */
+  /** Animates the shot (the player's by a random weapon, the AI's by its cannon); resolves on impact. */
   const launch = useCallback(async (side: 'player' | 'ai', coord: Coord) => {
-    const battery = batteries.current[side === 'player' ? 'player' : 'enemy']
-    const board = side === 'player' ? 'enemy' : 'own'
-    const target = document.querySelector<HTMLElement>(`[data-board="${board}"] [data-cell="${coord.r}-${coord.c}"]`)
+    if (side === 'player') return strike(WEAPONS[Math.floor(Math.random() * WEAPONS.length)], 'enemy', coord.r, coord.c, SHOT_MS)
+    const battery = batteries.current.enemy
+    const target = document.querySelector<HTMLElement>(`[data-board="own"] [data-cell="${coord.r}-${coord.c}"]`)
     if (!battery || !target || !layerRef.current) return sleep(SHOT_MS)
     return fireRocket(battery, target, layerRef.current)
   }, [])
@@ -507,16 +507,14 @@ export default function App() {
               onShipPointerDown={phase === 'placement' ? grabShip : undefined}
               draggingId={dragId}
             />
-            {phase !== 'placement' && <Cannon side="player" register={registerPlayer} />}
           </div>
           {phase !== 'placement' && <FleetStatus board={player} title="Your ships" />}
         </div>
 
-        {phase !== 'placement' && (
-          <div className="board-panel side-enemy">
+        <div className="board-panel side-enemy">
             <h2>
               Enemy waters
-              <HealthBar value={healthOf(enemy)} label="Enemy fleet health" />
+              {phase !== 'placement' && <HealthBar value={healthOf(enemy)} label="Enemy fleet health" />}
               {phase === 'playing' && (
                 <button
                   type="button"
@@ -541,14 +539,13 @@ export default function App() {
                 onCellClick={fireAt}
                 heat={heat}
               />
-              <Cannon side="enemy" register={registerEnemy} />
+              {phase !== 'placement' && <Cannon side="enemy" register={registerEnemy} />}
             </div>
-            <FleetStatus board={enemy} title="Enemy ships" />
+            {phase !== 'placement' && <FleetStatus board={enemy} title="Enemy ships" />}
           </div>
-        )}
       </section>
 
-      {phase === 'playing' && <SeaLayer />}
+      {phase !== 'over' && <SeaLayer />}
       {showBoard && <LeaderboardDialog onClose={() => setShowBoard(false)} />}
     </main>
   )

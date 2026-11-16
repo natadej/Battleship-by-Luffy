@@ -912,12 +912,12 @@ kbd {
   font-size: 1rem;
 }
 
-/* Phones: landscape only. Portrait gets a rotate prompt. */
+/* Phones: landscape only. Portrait gets a rotate prompt. Tablets and unfolded foldables (wider than 600px) play either way. */
 .rotate-overlay {
   display: none;
 }
 
-@media (orientation: portrait) and (max-width: 820px) and (pointer: coarse) {
+@media (orientation: portrait) and (max-width: 600px) and (pointer: coarse) {
   .rotate-overlay {
     position: fixed;
     inset: 0;
@@ -1057,7 +1057,38 @@ kbd {
   }
 }
 
-/* Bubble canvas and fleet health. */
+/* Tablets and unfolded foldables in portrait: both boards side by side, sized to the width. */
+@media (orientation: portrait) and (min-width: 601px) and (max-width: 1100px) {
+  .app {
+    max-width: none;
+    padding: 12px 10px 20px;
+  }
+
+  .boards {
+    flex-wrap: nowrap;
+  }
+
+  .board-panel {
+    padding: 10px 8px;
+  }
+
+  .grid {
+    --cell: min(calc((50vw - 70px) / 10), 46px);
+    grid-template-columns: 16px repeat(10, var(--cell));
+    grid-template-rows: 16px repeat(10, var(--cell));
+  }
+}
+
+/* Bubble canvas, weapon strikes and fleet health. */
+.strike-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+}
+
 .sea-layer {
   position: fixed;
   inset: 0;

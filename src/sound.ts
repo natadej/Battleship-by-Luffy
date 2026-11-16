@@ -161,7 +161,7 @@ export function playLaunch() {
   src.stop(t + 1.1)
 }
 
-// Noise helper shared by the effects above.
+// Noise helper shared by the effects.
 
 function noiseBurst(ac: AudioContext, t: number, dur: number, type: BiquadFilterType, freq: number, peak: number) {
   const src = ac.createBufferSource()
@@ -173,4 +173,91 @@ function noiseBurst(ac: AudioContext, t: number, dur: number, type: BiquadFilter
   src.start(t, Math.random())
   src.stop(t + dur + 0.05)
   return f
+}
+
+/** Machine-gun burst: per round a sharp muzzle crack, a chesty body and a low kick, with slight
+ * timing and pitch jitter, then a short rumbling echo. */
+export function playMachineGun(rounds = 5) {
+  const ac = audio()
+  if (!ac || muted) return
+  const t0 = ac.currentTime
+  for (let i = 0; i < rounds; i++) {
+    const t = t0 + i * 0.09 + Math.random() * 0.012
+    const crack = noiseBurst(ac, t, 0.025, 'highpass', 2800 + Math.random() * 800, 0.55)
+    crack.Q.value = 0.8
+    noiseBurst(ac, t, 0.09, 'bandpass', 700 + Math.random() * 200, 0.5)
+    thump(ac, t, 140 + Math.random() * 30, 55, 0.1, 0.6)
+  }
+  const tail = noiseBurst(ac, t0 + rounds * 0.09, 0.6, 'lowpass', 500, 0.25)
+  tail.frequency.exponentialRampToValueAtTime(120, t0 + rounds * 0.09 + 0.6)
+}
+
+/** Missile or rocket leaving the rail. */
+export function playMissile() {
+  const ac = audio()
+  if (!ac || muted) return
+  const t = ac.currentTime
+  const f = noiseBurst(ac, t, 0.7, 'bandpass', 600, 0.3)
+  f.frequency.exponentialRampToValueAtTime(2600, t + 0.7)
+  thump(ac, t, 120, 40, 0.3, 0.6)
+}
+
+/** Jet fly-by: a roar that rises and falls in pitch. */
+export function playJet() {
+  const ac = audio()
+  if (!ac || muted) return
+  const t = ac.currentTime
+  const f = noiseBurst(ac, t, 2.2, 'bandpass', 500, 0.3)
+  f.Q.value = 1.5
+  f.frequency.setValueAtTime(500, t)
+  f.frequency.exponentialRampToValueAtTime(1800, t + 0.9)
+  f.frequency.exponentialRampToValueAtTime(350, t + 2.2)
+}
+
+/** B-52 bombers: a deep, detuned engine drone. */
+export function playBomber() {
+  const ac = audio()
+  if (!ac || muted) return
+  const t = ac.currentTime
+  const g = ac.createGain()
+  g.gain.setValueAtTime(0.0001, t)
+  g.gain.exponentialRampToValueAtTime(0.2, t + 1)
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 4)
+  const lp = ac.createBiquadFilter()
+  lp.type = 'lowpass'
+  lp.frequency.value = 320
+  lp.connect(g).connect(out(ac))
+  for (const hz of [55, 58.5, 110]) {
+    const o = ac.createOscillator()
+    o.type = 'sawtooth'
+    o.frequency.value = hz
+    o.connect(lp)
+    o.start(t)
+    o.stop(t + 4.1)
+  }
+}
+
+/** Nuclear blast: a crack, a ground-shaking sub-bass boom and a long rolling roar. */
+export function playNuke() {
+  const ac = audio()
+  if (!ac || muted) return
+  const t = ac.currentTime + IMPACT_DELAY_S
+  noiseBurst(ac, t, 0.15, 'highpass', 1800, 0.9)
+  thump(ac, t, 70, 16, 3, 1)
+  thump(ac, t + 0.35, 50, 14, 2.5, 0.8)
+  const roar = noiseBurst(ac, t, 3.8, 'lowpass', 3500, 1)
+  roar.frequency.exponentialRampToValueAtTime(50, t + 3.8)
+}
+
+/** Napalm: a whoomp as it ignites, then the roar and crackle of fire. */
+export function playNapalm() {
+  const ac = audio()
+  if (!ac || muted) return
+  const t = ac.currentTime + IMPACT_DELAY_S
+  thump(ac, t, 110, 40, 0.5, 0.8)
+  const whoosh = noiseBurst(ac, t, 0.5, 'bandpass', 400, 0.7)
+  whoosh.frequency.exponentialRampToValueAtTime(1600, t + 0.5)
+  const roar = noiseBurst(ac, t + 0.1, 1.8, 'lowpass', 900, 0.55)
+  roar.frequency.exponentialRampToValueAtTime(200, t + 1.9)
+  for (let i = 0; i < 24; i++) noiseBurst(ac, t + 0.15 + Math.random() * 1.6, 0.03, 'highpass', 3000, 0.15)
 }
