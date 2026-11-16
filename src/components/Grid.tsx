@@ -21,6 +21,10 @@ interface Props {
   /** Makes visible ships draggable/tappable (placement). */
   onShipPointerDown?: (ship: Ship, e: PointerEvent<HTMLDivElement>) => void
   draggingId?: string | null
+  /** Where the healing box sits. */
+  crate?: Coord | null
+  /** Squares the chosen weapon will cover around the hovered square. */
+  area?: Coord[] | null
 }
 
 const range = Array.from({ length: SIZE }, (_, i) => i)
@@ -40,6 +44,8 @@ export function Grid({
   heat,
   onShipPointerDown,
   draggingId,
+  crate,
+  area,
 }: Props) {
   const visibleShips = board.ships.filter((s) => showShips === 'all' || isSunk(board, s))
   return (
@@ -73,6 +79,7 @@ export function Grid({
           if (inPreview) classes.push(preview!.valid ? 'preview-ok' : 'preview-bad')
           if (isLast) classes.push('last')
           if (queued && sameCoord(queued, coord)) classes.push('queued')
+          if (!shot && area?.some((p) => sameCoord(p, coord))) classes.push('aim-area')
           const canClick = interactive && !!onCellClick
           const p = !shot && heat ? heat[r][c] : 0
           return (
@@ -94,6 +101,12 @@ export function Grid({
             </button>
           )
         }),
+      )}
+
+      {crate && (
+        <div className="crate" style={at(crate.r + 2, crate.c + 2)} aria-label={`Healing box at ${coordLabel(crate)}`}>
+          <span className="crate-icon" aria-hidden="true" />
+        </div>
       )}
 
       {visibleShips.map((ship) => {

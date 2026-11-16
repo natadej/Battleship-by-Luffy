@@ -1,10 +1,9 @@
 import { type PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
-import { type Battery, SHOT_MS, fireRocket } from './artillery'
-import { Cannon } from './components/Cannon'
+import { SHOT_MS } from './artillery'
 import { FleetStatus } from './components/FleetStatus'
 import { Grid } from './components/Grid'
 import { SeaLayer } from './components/SeaLayer'
-import { WEAPONS, strike } from './strikes'
+import { strike } from './strikes'
 import { LeaderboardDialog, LeaderboardTable } from './components/Leaderboard'
 import { type Level, LEVELS, aiMode, chooseShot } from './game/ai'
 import {
@@ -25,7 +24,20 @@ import {
 import { fleetPlaced, initialState, reducer } from './game/game'
 import { knowledgeOf, normalize, probabilityGrid } from './game/probability'
 import { healthOf } from './game/raid'
-import { computeScore, pct, statsOf } from './game/score'
+import { computeScore, pct } from './game/score'
+import {
+  type Special,
+  type Weapon,
+  WEAPON_INFO,
+  WEAPON_ORDER,
+  aiHeal,
+  aiWeapon,
+  canHeal,
+  crateSpot,
+  footprint,
+  onCrate,
+  relocation,
+} from './game/weapons'
 import { type ScoreEntry, saveName, savedName, submitScore } from './leaderboard'
 import { isMuted, playExplosion, playSplash, setMuted, unlockAudio } from './sound'
 import './App.css'
@@ -35,12 +47,27 @@ const AI_PAUSE_MS = 250
 
 type Drag = { id: string; grab: number; orientation: Orientation; source: 'picker' | 'ship'; x0: number; y0: number; moved: boolean }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-function playShotSound(board: Board, coord: Coord) {
-  const { outcome } = fire(board, coord)
-  if (outcome === 'miss') playSplash()
-  else playExplosion(outcome === 'sunk')
+/** One sound for a whole volley: the biggest result among the squares hit. */
+function playShotSound(board: Board, cells: Coord[]) {
+  let worst = 'miss'
+  for (const p of cells) {
+    if (board.shots[p.r][p.c] !== null) continue
+    const result = fire(board, p)
+    board = result.board
+    if (result.outcome === 'sunk' || (result.outcome === 'hit' && worst === 'miss')) worst = result.outcome
+  }
+  if (worst === 'miss') playSplash()
+  else playExplosion(worst === 'sunk')
+}
+
+/** Squares to highlight while aiming a weapon; the machine gun shows both possible rows. */
+function aimArea(weapon: Weapon, { r, c }: Coord): Coord[] {
+  if (weapon === 'missile') return []
+  const out: Coord[] = []
+  for (let dr = -1; dr <= 1; dr++)
+    for (let dc = -1; dc <= 1; dc++) if (weapon !== 'mg' || !dr || !dc) out.push({ r: r + dr, c: c + dc })
+  return out
 }
 
 /** The own-board cell under a screen point, looking through ship sprites. */
@@ -86,6 +113,11 @@ export default function App() {
   const [submitted, setSubmitted] = useState<ScoreEntry | null>(null)
   const [queued, setQueued] = useState<Coord | null>(null)
   const [campaign, setCampaign] = useState<Campaign>(NEW_CAMPAIGN)
+  const [weapon, setWeapon] = useState<Weapon>('missile')
+  const [aim, setAim] = useState<Coord | null>(null)
+  /** Using the healing kit: the ship picked (if any) and the way it will face. */
+  const [healing, setHealing] = useState<{ id: string | null; o: Orientation } | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
 
   const { phase, player, enemy, turn, winner, level } = state
   const selected = FLEET.find((s) => s.id === selectedId) ?? null
@@ -102,35 +134,52 @@ export default function App() {
   /** Squares with a rocket on the way. */
   const pending = useRef<{ player: Coord | null; ai: Coord | null }>({ player: null, ai: null })
   const dragRef = useRef<Drag | null>(null)
-  const layerRef = useRef<HTMLDivElement>(null)
-  const batteries = useRef<{ enemy: Battery | null }>({ enemy: null })
-  const registerEnemy = useCallback((b: Battery | null) => void (batteries.current.enemy = b), [])
 
-  /** Animates the shot (the player's by a random weapon, the AI's by its cannon); resolves on impact. */
-  const launch = useCallback(async (side: 'player' | 'ai', coord: Coord) => {
-    if (side === 'player') return strike(WEAPONS[Math.floor(Math.random() * WEAPONS.length)], 'enemy', coord.r, coord.c, SHOT_MS)
-    const battery = batteries.current.enemy
-    const target = document.querySelector<HTMLElement>(`[data-board="own"] [data-cell="${coord.r}-${coord.c}"]`)
-    if (!battery || !target || !layerRef.current) return sleep(SHOT_MS)
-    return fireRocket(battery, target, layerRef.current)
-  }, [])
+  /** Animates a shot by either side with its weapon; resolves on impact. */
+  const launch = useCallback(
+    (side: 'player' | 'ai', weapon: Weapon, coord: Coord, cells: Coord[]) => strike(weapon, side === 'player' ? 'enemy' : 'own', coord, cells, SHOT_MS),
+    [],
+  )
+
+  useEffect(() => {
+    if (!notice) return
+    const t = setTimeout(() => setNotice(null), 3500)
+    return () => clearTimeout(t)
+  }, [notice])
 
   // Enemy turn: a short pause, then aim and fire with the strategy for the chosen level.
   useEffect(() => {
     if (phase !== 'playing' || turn !== 'ai') return
     let cancelled = false
     const t = setTimeout(async () => {
-      const aim = () => chooseShot(stateRef.current.ai, Math.random, stateRef.current.level)
-      let coord = aim()
+      const s = stateRef.current
+      if (s.kits.ai) {
+        const heal = aiHeal(s.enemy)
+        if (heal) {
+          dispatch({ type: 'heal', side: 'ai', ...heal })
+          setNotice(`The enemy used its healing kit: its ${FLEET.find((f) => f.id === heal.id)?.name} is repaired and has moved.`)
+        }
+      }
+      const crate = s.crates.player
+      // From level 2 the AI sometimes goes for the healing box when it has no ship to chase.
+      const forCrate = crate && s.level > 1 && aiMode(s.ai) === 'hunt' && Math.random() < 0.3
+      let coord = forCrate ? crate : chooseShot(s.ai, Math.random, s.level)
+      const weapon = aiWeapon(s.ai, s.arsenal.ai, s.level)
+      let cells = footprint(weapon, coord, s.player)
       pending.current.ai = coord
       setInFlight('ai')
-      await launch('ai', coord)
+      await launch('ai', weapon, coord, cells)
       pending.current.ai = null
       if (cancelled) return
-      if (stateRef.current.player.shots[coord.r][coord.c]) coord = aim()
-      playShotSound(stateRef.current.player, coord)
+      const now = stateRef.current
+      if (now.player.shots[coord.r][coord.c]) {
+        coord = chooseShot(now.ai, Math.random, now.level)
+        cells = [coord]
+      }
+      playShotSound(now.player, cells)
       setLastAiShot(coord)
-      dispatch({ type: 'aiFire', coord })
+      if (onCrate(cells, now.crates.player)) setNotice('The enemy picked up the healing box on your board!')
+      dispatch({ type: 'aiFire', coord, weapon, cells })
       setInFlight(null)
     }, AI_PAUSE_MS)
     return () => {
@@ -223,8 +272,11 @@ export default function App() {
     beginDrag(e, { id: ship.id, grab, orientation: vertical ? 'V' : 'H', source: 'ship' })
   }
 
+  const healShip = healing?.id ? player.ships.find((p) => p.id === healing.id) : undefined
   const preview =
-    phase === 'placement' && selected && hover
+    healing && healShip && hover
+      ? { cells: shipCells(hover, healShip.length, healing.o), valid: !!relocation(player, healShip, hover, healing.o) }
+      : phase === 'placement' && selected && hover
       ? (() => {
           const cells = shipCells(hover, selected.length, orientation)
           return { cells, valid: canPlace(removeShip(player, selected.id), cells) }
@@ -254,7 +306,11 @@ export default function App() {
 
   function start() {
     unlockAudio()
-    dispatch({ type: 'start', enemy: randomBoard(), level })
+    const enemyBoard = randomBoard()
+    dispatch({ type: 'start', enemy: enemyBoard, level, crates: { player: crateSpot(player), enemy: crateSpot(enemyBoard) } })
+    setWeapon('missile')
+    setHealing(null)
+    setNotice(null)
     setLastAiShot(null)
     setLastPlayerShot(null)
     setQueued(null)
@@ -273,23 +329,45 @@ export default function App() {
   })
 
   async function fireAt(coord: Coord) {
-    if (phase !== 'playing' || enemy.shots[coord.r][coord.c]) return
+    if (phase !== 'playing' || healing || enemy.shots[coord.r][coord.c]) return
     unlockAudio()
     const busy = turn !== 'player' || inFlight || pending.current.player
     if (busy) {
       setQueued((q) => (q && sameCoord(q, coord) ? null : coord))
       return
     }
+    const w = weapon !== 'missile' && state.arsenal.player[weapon] > 0 ? weapon : 'missile'
+    const cells = footprint(w, coord, enemy)
     pending.current.player = coord
     setInFlight('player')
-    await launch('player', coord)
+    setWeapon('missile')
+    await launch('player', w, coord, cells)
     pending.current.player = null
     const s = stateRef.current
     if (s.phase !== 'playing' || s.enemy.shots[coord.r][coord.c]) return setInFlight(null)
-    playShotSound(s.enemy, coord)
+    playShotSound(s.enemy, cells)
     setLastPlayerShot(coord)
-    dispatch({ type: 'playerFire', coord })
+    if (onCrate(cells, s.crates.enemy)) setNotice('Healing box collected! Use it on a damaged ship.')
+    dispatch({ type: 'playerFire', coord, weapon: w, cells })
     setInFlight(null)
+  }
+
+  const myTurn = phase === 'playing' && turn === 'player' && !inFlight
+
+  function healClick(coord: Coord) {
+    if (!healing || !myTurn) return
+    const ship = shipAt(player, coord)
+    if (!healing.id || (ship && ship.id !== healing.id && canHeal(player, ship))) {
+      if (ship && canHeal(player, ship)) setHealing({ id: ship.id, o: ship.cells.length > 1 && ship.cells[1].r !== ship.cells[0].r ? 'V' : 'H' })
+      return
+    }
+    const picked = player.ships.find((p) => p.id === healing.id)
+    const cells = picked && relocation(player, picked, coord, healing.o)
+    if (!picked || !cells) return
+    dispatch({ type: 'heal', side: 'player', id: picked.id, cells })
+    setHealing(null)
+    setHover(null)
+    setNotice(`Your ${picked.name} is repaired and has moved.`)
   }
 
   /** Next level after a win (keeping the campaign totals), or a new campaign from level 1. */
@@ -300,6 +378,7 @@ export default function App() {
     dispatch({ type: 'setLevel', level: next ? ((level + 1) as Level) : 1 })
     if (next) dispatch({ type: 'setPlayerBoard', board: randomBoard() })
     setSelectedId(next ? null : FLEET[0].id)
+    setHealing(null)
     setLastAiShot(null)
     setLastPlayerShot(null)
   }
@@ -322,7 +401,8 @@ export default function App() {
     return normalize(probabilityGrid(k.grid, k.remaining))
   }, [shade, phase, enemy])
 
-  const stats = statsOf(enemy, state.raided.enemy)
+  const { shots: fired, hits } = state.tally.player
+  const stats = { shots: fired, hits, accuracy: fired ? hits / fired : 0 }
   const score = computeScore({ accuracy: stats.accuracy, level, won: winner === 'player', assisted })
   const cleared = winner === 'player'
   /** The campaign ends on a loss or after beating level 5; only then does the total go on the leaderboard. */
@@ -366,10 +446,16 @@ export default function App() {
           : winner === 'draw'
             ? 'Draw! Both fleets went down together.'
             : 'Defeat. The enemy sank your fleet.'
-        : inFlight === 'player'
-          ? 'Rocket away…'
-          : turn === 'player'
-            ? 'Your turn. Fire on enemy waters.'
+        : notice
+          ? notice
+          : healing
+            ? healShip
+              ? `Tap an unshot spot for the ${healShip.name}.`
+              : 'Tap a damaged ship to repair it.'
+            : inFlight === 'player'
+              ? 'Fire!'
+              : turn === 'player'
+                ? `Your turn. Fire your ${WEAPON_INFO[weapon].name.toLowerCase()} on enemy waters.`
             : 'Incoming! The enemy is aiming…'
 
   return (
@@ -383,7 +469,6 @@ export default function App() {
           </button>
         )}
       </div>
-      <div ref={layerRef} className="rocket-layer" aria-hidden="true" />
 
       <header>
         <h1>Battleship</h1>
@@ -494,16 +579,38 @@ export default function App() {
               </span>
             )}
           </h2>
+          {phase === 'playing' && state.kits.player && (
+            <div className="kit-bar">
+              <span className="crate-icon" aria-hidden="true" />
+              {healing ? (
+                <>
+                  {healShip && (
+                    <button type="button" onClick={() => setHealing({ ...healing, o: healing.o === 'H' ? 'V' : 'H' })}>
+                      Rotate
+                    </button>
+                  )}
+                  <button type="button" onClick={() => setHealing(null)}>
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <button type="button" className="primary" disabled={!myTurn || !player.ships.some((p) => canHeal(player, p))} onClick={() => setHealing({ id: null, o: 'H' })}>
+                  Use healing kit
+                </button>
+              )}
+            </div>
+          )}
           <div className="grid-wrap">
             <Grid
               board={player}
               label="Your board"
               showShips="all"
-              interactive={phase === 'placement'}
+              interactive={phase === 'placement' || (!!healing && myTurn)}
               preview={preview}
               lastShot={lastAiShot}
-              onCellClick={phase === 'placement' ? handlePlacementClick : undefined}
-              onCellHover={phase === 'placement' && !dragId ? setHover : undefined}
+              crate={phase === 'playing' ? state.crates.player : null}
+              onCellClick={phase === 'placement' ? handlePlacementClick : healing ? healClick : undefined}
+              onCellHover={(phase === 'placement' && !dragId) || healing ? setHover : undefined}
               onShipPointerDown={phase === 'placement' ? grabShip : undefined}
               draggingId={dragId}
             />
@@ -527,9 +634,34 @@ export default function App() {
                 </button>
               )}
             </h2>
+            {phase === 'playing' && (
+              <div className="weapon-bar" role="radiogroup" aria-label="Weapon">
+                {WEAPON_ORDER.map((w) => {
+                  const left = w === 'missile' ? Infinity : state.arsenal.player[w as Special]
+                  return (
+                    <button
+                      key={w}
+                      type="button"
+                      role="radio"
+                      aria-checked={weapon === w}
+                      className={`weapon weapon-${w} ${weapon === w ? 'on' : ''}`}
+                      disabled={!left}
+                      title={WEAPON_INFO[w].effect}
+                      onClick={() => setWeapon(w)}
+                    >
+                      {WEAPON_INFO[w].name}
+                      <small>{left === Infinity ? '∞' : `×${left}`}</small>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
             <div className="grid-wrap">
               <Grid
                 board={enemy}
+                crate={phase === 'playing' ? state.crates.enemy : null}
+                area={aim && myTurn ? aimArea(weapon, aim) : null}
+                onCellHover={phase === 'playing' ? setAim : undefined}
                 label="Enemy board"
                 showShips={phase === 'over' ? 'all' : 'sunk'}
                 variant="enemy"
@@ -539,7 +671,6 @@ export default function App() {
                 onCellClick={fireAt}
                 heat={heat}
               />
-              {phase !== 'placement' && <Cannon side="enemy" register={registerEnemy} />}
             </div>
             {phase !== 'placement' && <FleetStatus board={enemy} title="Enemy ships" />}
           </div>

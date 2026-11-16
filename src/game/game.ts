@@ -9,9 +9,12 @@ import {
   coordLabel,
   emptyBoard,
   fire,
+  isSunk,
   placeShip,
   removeShip,
+  inBounds,
 } from './board'
+import { type Arsenal, type Weapon, fullArsenal, onCrate } from './weapons'
 
 export type Phase = 'placement' | 'playing' | 'over'
 export type Side = 'player' | 'ai'
@@ -26,17 +29,28 @@ export interface GameState {
   turn: Side
   winner: Winner | null
   log: string[]
+  /** Specials left this level. */
+  arsenal: { player: Arsenal; ai: Arsenal }
+  /** The healing box on each board (`player` = on the player's board, for the AI to collect). */
+  crates: { player: Coord | null; enemy: Coord | null }
+  /** Who is holding an unused healing kit. */
+  kits: { player: boolean; ai: boolean }
+  /** Squares fired at and squares hit, per shooter (the healing kit turns hits back into water). */
+  tally: { player: Tally; ai: Tally }
   /** Squares hit by air raids rather than aimed shots (kept out of accuracy). */
   raided: { player: Coord[]; enemy: Coord[] }
 }
+
+export type Tally = { shots: number; hits: number }
 
 export type Action =
   | { type: 'place'; ship: ShipDef; start: Coord; orientation: Orientation }
   | { type: 'remove'; id: string }
   | { type: 'setPlayerBoard'; board: Board }
-  | { type: 'start'; enemy: Board; level: Level }
-  | { type: 'playerFire'; coord: Coord }
-  | { type: 'aiFire'; coord: Coord }
+  | { type: 'start'; enemy: Board; level: Level; crates?: GameState['crates'] }
+  | { type: 'playerFire'; coord: Coord; weapon?: Weapon; cells?: Coord[] }
+  | { type: 'aiFire'; coord: Coord; weapon?: Weapon; cells?: Coord[] }
+  | { type: 'heal'; side: Side; id: string; cells: Coord[] }
   | { type: 'raid'; player: Coord[]; enemy: Coord[] }
   | { type: 'setLevel'; level: Level }
   | { type: 'reset' }
@@ -51,6 +65,10 @@ export const initialState = (): GameState => ({
   winner: null,
   log: [],
   raided: { player: [], enemy: [] },
+  arsenal: { player: fullArsenal(), ai: fullArsenal() },
+  crates: { player: null, enemy: null },
+  kits: { player: false, ai: false },
+  tally: { player: { shots: 0, hits: 0 }, ai: { shots: 0, hits: 0 } },
 })
 
 export const fleetPlaced = (board: Board) => board.ships.length === FLEET.length
@@ -65,6 +83,40 @@ function describe(who: string, coord: Coord, outcome: string, shipName?: string)
   if (outcome === 'miss') return `${who} fired at ${at}: miss.`
   if (outcome === 'hit') return `${who} fired at ${at}: hit!`
   return `${who} fired at ${at}: sank the ${shipName}!`
+}
+
+/** Fires one weapon: the target and any extra squares. Returns null if the shot isn't allowed. */
+function volley(state: GameState, side: Side, coord: Coord, weapon: Weapon, cells: Coord[]) {
+  const board = side === 'player' ? state.enemy : state.player
+  if (!inBounds(coord) || board.shots[coord.r][coord.c] !== null) return null
+  const arsenal = state.arsenal[side]
+  if (weapon !== 'missile' && arsenal[weapon] <= 0) return null
+  let next = board
+  let ai = state.ai
+  let hits = 0
+  let worst: { outcome: string; ship?: string } = { outcome: 'miss' }
+  const fired: Coord[] = []
+  for (const p of [coord, ...cells.filter((q) => !(q.r === coord.r && q.c === coord.c))]) {
+    if (!inBounds(p) || next.shots[p.r][p.c] !== null) continue
+    const result = fire(next, p)
+    next = result.board
+    fired.push(p)
+    if (side === 'ai') ai = recordShot(ai, p, result)
+    if (result.outcome !== 'miss') hits++
+    if (result.outcome === 'sunk' || (result.outcome === 'hit' && worst.outcome === 'miss')) worst = { outcome: result.outcome, ship: result.ship?.name }
+  }
+  const crateKey = side === 'player' ? 'enemy' : 'player'
+  const collected = onCrate(fired, state.crates[crateKey])
+  const t = state.tally[side]
+  return {
+    board: next,
+    ai,
+    worst,
+    arsenal: { ...state.arsenal, [side]: weapon === 'missile' ? arsenal : { ...arsenal, [weapon]: arsenal[weapon] - 1 } },
+    crates: collected ? { ...state.crates, [crateKey]: null } : state.crates,
+    kits: collected ? { ...state.kits, [side]: true } : state.kits,
+    tally: { ...state.tally, [side]: { shots: t.shots + fired.length, hits: t.hits + hits } },
+  }
 }
 
 export function reducer(state: GameState, action: Action): GameState {
@@ -82,37 +134,77 @@ export function reducer(state: GameState, action: Action): GameState {
       return { ...state, player: action.board }
     case 'start':
       if (state.phase !== 'placement' || !fleetPlaced(state.player)) return state
-      return { ...state, phase: 'playing', enemy: action.enemy, level: action.level, turn: 'player', log: ['Battle stations! Your move.'] }
+      return {
+        ...state,
+        phase: 'playing',
+        enemy: action.enemy,
+        level: action.level,
+        turn: 'player',
+        log: ['Battle stations! Your move.'],
+        crates: action.crates ?? { player: null, enemy: null },
+      }
     case 'playerFire': {
       const { coord } = action
       if (state.phase !== 'playing' || state.turn !== 'player') return state
-      if (state.enemy.shots[coord.r][coord.c] !== null) return state
-      const result = fire(state.enemy, coord)
-      const won = allSunk(result.board)
+      const v = volley(state, 'player', coord, action.weapon ?? 'missile', action.cells ?? [coord])
+      if (!v) return state
+      const won = allSunk(v.board)
       return {
         ...state,
-        enemy: result.board,
+        enemy: v.board,
+        arsenal: v.arsenal,
+        crates: v.crates,
+        kits: v.kits,
+        tally: v.tally,
         turn: won ? 'player' : 'ai',
         phase: won ? 'over' : 'playing',
         winner: won ? 'player' : null,
-        log: [describe('You', coord, result.outcome, result.ship?.name), ...state.log].slice(0, MAX_LOG),
+        log: [describe('You', coord, v.worst.outcome, v.worst.ship), ...state.log].slice(0, MAX_LOG),
       }
     }
     case 'aiFire': {
       const { coord } = action
       if (state.phase !== 'playing' || state.turn !== 'ai') return state
-      if (state.player.shots[coord.r][coord.c] !== null) return state
-      const result = fire(state.player, coord)
-      const won = allSunk(result.board)
+      const v = volley(state, 'ai', coord, action.weapon ?? 'missile', action.cells ?? [coord])
+      if (!v) return state
+      const won = allSunk(v.board)
       return {
         ...state,
-        player: result.board,
-        ai: recordShot(state.ai, coord, result),
+        player: v.board,
+        ai: v.ai,
+        arsenal: v.arsenal,
+        crates: v.crates,
+        kits: v.kits,
+        tally: v.tally,
         turn: 'player',
         phase: won ? 'over' : 'playing',
         winner: won ? 'ai' : null,
-        log: [describe('Enemy', coord, result.outcome, result.ship?.name), ...state.log].slice(0, MAX_LOG),
+        log: [describe('Enemy', coord, v.worst.outcome, v.worst.ship), ...state.log].slice(0, MAX_LOG),
       }
+    }
+    case 'heal': {
+      const { side, id, cells } = action
+      if (state.phase !== 'playing' || state.turn !== side || !state.kits[side]) return state
+      const key = side === 'player' ? 'player' : 'enemy'
+      const board = state[key]
+      const ship = board.ships.find((s) => s.id === id)
+      if (!ship || cells.length !== ship.length || isSunk(board, ship)) return state
+      const hurt = ship.cells.filter((p) => board.shots[p.r][p.c] === 'hit')
+      if (!hurt.length) return state
+      const clear = cells.every((p) => inBounds(p) && board.shots[p.r][p.c] === null && board.ships.every((s) => s.id === id || !s.cells.some((q) => q.r === p.r && q.c === p.c)))
+      if (!clear) return state
+      // The old hits become plain water: the ship has moved away from them.
+      const shots = board.shots.map((row) => row.slice())
+      for (const p of hurt) shots[p.r][p.c] = 'miss'
+      const healed: Board = { shots, ships: board.ships.map((s) => (s.id === id ? { ...s, cells } : s)) }
+      let ai = state.ai
+      if (side === 'player') {
+        const grid = ai.grid.map((row) => row.slice())
+        for (const p of hurt) grid[p.r][p.c] = 'miss'
+        ai = { ...ai, grid }
+      }
+      // The tally is untouched: hits that were healed away still count for the shooter's accuracy.
+      return { ...state, [key]: healed, ai, kits: { ...state.kits, [side]: false } }
     }
     case 'raid': {
       if (state.phase !== 'playing') return state

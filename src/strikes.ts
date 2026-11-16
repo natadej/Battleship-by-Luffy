@@ -1,24 +1,28 @@
-// The player's shot, delivered by one of five weapons. Each one blankets the 3×3 squares around the
-// target with its effect, but only the chosen square is fired at: the game applies the shot when the
-// returned promise resolves, `ms` after the click. Drawn on a short-lived full-screen canvas.
+// The animation of one shot by either side, drawn on a short-lived full-screen canvas over the squares
+// the weapon hits. The game applies the shot when the returned promise resolves, `ms` after firing.
 
-import { playBomber, playJet, playMachineGun, playMissile, playNapalm, playNuke } from './sound'
+import type { Coord } from './game/board'
+import type { Weapon } from './game/weapons'
+import { playBomber, playJet, playMachineGun, playMissile, playNuke } from './sound'
 
-export type Weapon = 'mg' | 'nuke' | 'b52' | 'missile' | 'napalm'
-export const WEAPONS: Weapon[] = ['mg', 'nuke', 'b52', 'missile', 'napalm']
 const LABEL: Record<Weapon, string> = {
   mg: 'MACHINE GUN',
   nuke: 'NUCLEAR BOMB',
-  b52: 'B-52 CARPET BOMB',
+  b52: 'B-52 BOMBS',
   missile: 'MISSILE',
-  napalm: 'NAPALM',
 }
 
 /** Seconds the effect keeps burning after impact. */
 const AFTER_S = 1.2
-// The player's blue theme.
-const FILL = '#a9d2ff'
-const LINE = '#1f5fb0'
+type Theme = { fill: string; line: string }
+/** The attacker's colours: blue for the player, red for the enemy. */
+const THEME: Record<'own' | 'enemy', Theme> = {
+  enemy: { fill: '#a9d2ff', line: '#1f5fb0' },
+  own: { fill: '#ffb3a8', line: '#b0261f' },
+}
+const themes = new WeakMap<CanvasRenderingContext2D, Theme>()
+const fillOf = (ctx: CanvasRenderingContext2D) => themes.get(ctx)!.fill
+const lineOf = (ctx: CanvasRenderingContext2D) => themes.get(ctx)!.line
 
 type Pt = { x: number; y: number }
 type Cell = Pt & { dr: number; dc: number }
@@ -41,19 +45,18 @@ const rectOf = (sel: string) => document.querySelector(sel)?.getBoundingClientRe
 const cellSel = (board: string, r: number, c: number) => `.grid[data-board="${board}"] [data-cell="${r}-${c}"]`
 const later = (s: number, f: () => void) => setTimeout(f, Math.max(0, s * 1000))
 
-/** Fires `weapon` at square (r, c) of `board`. Resolves at impact, `ms` from now. */
-export function strike(weapon: Weapon, board: 'own' | 'enemy', r: number, c: number, ms: number): Promise<void> {
+/** Fires `weapon` at `target` on `board`, hitting `cells` (target included). Resolves at impact, `ms` from now. */
+export function strike(weapon: Weapon, board: 'own' | 'enemy', target: Coord, cells: Coord[], ms: number): Promise<void> {
   const done = new Promise<void>((resolve) => setTimeout(resolve, ms))
   const grid = rectOf(`.grid[data-board="${board}"]`)
-  const at = rectOf(cellSel(board, r, c))
+  const at = rectOf(cellSel(board, target.r, target.c))
   if (!grid || !at || matchMedia('(prefers-reduced-motion: reduce)').matches) return done
   const home = rectOf(`.grid[data-board="${board === 'enemy' ? 'own' : 'enemy'}"]`)
   const area: Cell[] = []
-  for (let dr = -1; dr <= 1; dr++)
-    for (let dc = -1; dc <= 1; dc++) {
-      const cell = rectOf(cellSel(board, r + dr, c + dc))
-      if (cell) area.push({ ...centre(cell), dr, dc })
-    }
+  for (const p of cells) {
+    const cell = rectOf(cellSel(board, p.r, p.c))
+    if (cell) area.push({ ...centre(cell), dr: p.r - target.r, dc: p.c - target.c })
+  }
   const scene: Scene = {
     hit: ms / 1000,
     goal: centre(at),
@@ -70,6 +73,7 @@ export function strike(weapon: Weapon, board: 'own' | 'enemy', r: number, c: num
   canvas.width = innerWidth * dpr
   canvas.height = innerHeight * dpr
   const ctx = canvas.getContext('2d')!
+  themes.set(ctx, THEME[board])
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
   const draw = SCENES[weapon](scene)
@@ -89,7 +93,7 @@ export function strike(weapon: Weapon, board: 'own' | 'enemy', r: number, c: num
 // ---- weapons --------------------------------------------------------------------------------
 
 const SCENES: Record<Weapon, (s: Scene) => Draw> = {
-  /** A fighter strafes the area, its tracers raking all 9 squares; the last round lands on the target. */
+  /** A fighter strafes the row of squares; the last round lands on the target. */
   mg: ({ hit, goal, size, area, dir }) => {
     const jetAt = (t: number): Pt => ({ x: goal.x + dir * size * (-1.6 + (t - hit) * 7), y: goal.y - size * 0.4 })
     const rounds = area.flatMap((p) =>
@@ -147,7 +151,7 @@ const SCENES: Record<Weapon, (s: Scene) => Draw> = {
     }
   },
 
-  /** A B-52 crosses the area dropping a stick of bombs, one on each of the 9 squares. */
+  /** A B-52 crosses the area dropping a bomb on each square it hits. */
   b52: ({ hit, goal, size, area, dir }) => {
     const speed = 9
     const over = hit - 0.25
@@ -173,7 +177,7 @@ const SCENES: Record<Weapon, (s: Scene) => Draw> = {
     }
   },
 
-  /** A missile arcs in from the attacker's side; its warhead bursts into cluster blasts across the area. */
+  /** A missile arcs in from the attacker's side onto the target. */
   missile: ({ hit, goal, size, area, dir }) => {
     const launch = hit - 0.9
     const start = { x: goal.x - dir * size * 9, y: goal.y + size * 2.5 }
@@ -199,45 +203,6 @@ const SCENES: Record<Weapon, (s: Scene) => Draw> = {
       for (const b of cluster) if (t >= b.at) blast(ctx, b.p, size * (b.at === hit ? 1.1 : 0.6), t - b.at)
     }
   },
-
-  /** A jet skims the area dropping napalm canisters; a carpet of fire spreads over all 9 squares. */
-  napalm: ({ hit, goal, size, area, dir }) => {
-    const speed = 8
-    const over = hit - 0.3
-    const jetAt = (t: number): Pt => ({ x: goal.x + dir * size * (-1.2 + (t - over) * speed), y: goal.y - size * 0.15 })
-    const cans = [-1, 0, 1].map((dc) => {
-      const land = hit + dc * dir * 0.08
-      return { dc, land, drop: land - 0.3 }
-    })
-    const flames = area.flatMap((p) =>
-      [0, 1, 2, 3].map(() => ({
-        p: { x: p.x + rand(-0.35, 0.35) * size, y: p.y + rand(-0.35, 0.35) * size },
-        land: cans[p.dc + 1].land + Math.abs(p.dr) * 0.06,
-        phase: rand(0, 6),
-        rate: rand(9, 15),
-      })),
-    )
-    playJet()
-    later(hit, playNapalm)
-    return (ctx, t) => {
-      for (const f of flames) {
-        const a = t - f.land
-        if (a < 0) continue
-        const env = clamp01(a / 0.15) * clamp01((hit + AFTER_S - t) / 0.4)
-        smoke(ctx, { x: f.p.x, y: f.p.y - a * size * 0.5 }, size * (0.35 + a * 0.3), 0.25 * env)
-        const flick = 0.75 + 0.25 * Math.sin(t * f.rate + f.phase)
-        fireball(ctx, f.p, size * 0.42 * flick, env)
-      }
-      for (const cn of cans) {
-        if (t < cn.drop || t >= cn.land) continue
-        const u = (t - cn.drop) / 0.3
-        const from = jetAt(cn.drop)
-        const to = { x: goal.x + cn.dc * size, y: goal.y }
-        bomb(ctx, lerp(from, to, u), (dir > 0 ? 0 : Math.PI) + u * 4, size * 0.45, '#6b5a2a')
-      }
-      jet(ctx, jetAt(t), dir > 0 ? 0 : Math.PI, size * 1)
-    }
-  },
 }
 
 // ---- drawing --------------------------------------------------------------------------------
@@ -253,7 +218,7 @@ function drawLabel(ctx: Ctx, { goal, size, hit }: Scene, text: string, t: number
   ctx.strokeStyle = 'rgb(5 15 30 / 0.85)'
   const y = goal.y - size * 1.9
   ctx.strokeText(text, goal.x, y)
-  ctx.fillStyle = FILL
+  ctx.fillStyle = fillOf(ctx)
   ctx.fillText(text, goal.x, y)
   ctx.restore()
 }
@@ -330,8 +295,8 @@ function shape(ctx: Ctx, p: Pt, angle: number, s: number, pts: number[][]) {
   ctx.beginPath()
   pts.forEach(([x, y], i) => (i ? ctx.lineTo(x * s, y * s) : ctx.moveTo(x * s, y * s)))
   ctx.closePath()
-  ctx.fillStyle = FILL
-  ctx.strokeStyle = LINE
+  ctx.fillStyle = fillOf(ctx)
+  ctx.strokeStyle = lineOf(ctx)
   ctx.lineWidth = 1.5
   ctx.fill()
   ctx.stroke()
@@ -363,7 +328,7 @@ function bomber(ctx: Ctx, p: Pt, angle: number, s: number) {
   ])
   for (const y of [-0.42, -0.25, 0.25, 0.42]) {
     const q = { x: p.x + Math.cos(angle) * -0.12 * s - Math.sin(angle) * y * s, y: p.y + Math.sin(angle) * -0.12 * s + Math.cos(angle) * y * s }
-    dot(ctx, q, s * 0.035, LINE)
+    dot(ctx, q, s * 0.035, lineOf(ctx))
   }
 }
 
@@ -378,13 +343,13 @@ function bomb(ctx: Ctx, p: Pt, angle: number, s: number, body: string) {
   ctx.translate(p.x, p.y)
   ctx.rotate(angle)
   ctx.fillStyle = body
-  ctx.strokeStyle = LINE
+  ctx.strokeStyle = lineOf(ctx)
   ctx.lineWidth = 1
   ctx.beginPath()
   ctx.ellipse(0, 0, s * 0.3, s * 0.11, 0, 0, Math.PI * 2)
   ctx.fill()
   ctx.stroke()
-  ctx.fillStyle = FILL
+  ctx.fillStyle = fillOf(ctx)
   ctx.fillRect(-s * 0.38, -s * 0.12, s * 0.08, s * 0.24)
   ctx.restore()
 }
