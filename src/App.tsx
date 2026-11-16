@@ -697,43 +697,48 @@ export default function App() {
       )}
 
       <section className="boards">
+        {phase === 'playing' && (
+          <aside className="edge-bar edge-player">
+            <span className="edge-title">
+              Your weapons
+              <br />
+              fire at the enemy ➜
+            </span>
+            <ArsenalBar side="player" arsenal={state.arsenal.player} active={weapon} onPick={setWeapon}>
+              {state.kits.player &&
+                (healing ? (
+                  <span className="kit-actions">
+                    {healShip && (
+                      <button type="button" className="kit-btn" onClick={() => setHealing({ ...healing, o: healing.o === 'H' ? 'V' : 'H' })}>
+                        🔄 Turn
+                      </button>
+                    )}
+                    <button type="button" className="kit-btn" onClick={() => setHealing(null)}>
+                      ✖ Cancel
+                    </button>
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    className="weapon kit-btn heal-ready"
+                    disabled={!myTurn || !player.ships.some((p) => canHeal(player, p))}
+                    title="Fix a hurt ship and move it"
+                    onClick={() => setHealing({ id: null, o: 'H' })}
+                  >
+                    <span className="weapon-icon" aria-hidden="true">
+                      ❤️
+                    </span>
+                    <span className="weapon-name">Heal</span>
+                  </button>
+                ))}
+            </ArsenalBar>
+          </aside>
+        )}
         <div className="board-panel side-player">
           <h2>
             <span className="side-name">🔵 Your fleet</span>
             {phase !== 'placement' && <HealthBar value={healthOf(player)} label="Your fleet health" />}
           </h2>
-          <div className="bar-row">
-            {phase === 'playing' && (
-              <ArsenalBar side="player" arsenal={state.arsenal.player} active={weapon} onPick={setWeapon}>
-                {state.kits.player &&
-                  (healing ? (
-                    <span className="kit-actions">
-                      {healShip && (
-                        <button type="button" className="kit-btn" onClick={() => setHealing({ ...healing, o: healing.o === 'H' ? 'V' : 'H' })}>
-                          🔄 Turn
-                        </button>
-                      )}
-                      <button type="button" className="kit-btn" onClick={() => setHealing(null)}>
-                        ✖ Cancel
-                      </button>
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      className="weapon kit-btn heal-ready"
-                      disabled={!myTurn || !player.ships.some((p) => canHeal(player, p))}
-                      title="Fix a hurt ship and move it"
-                      onClick={() => setHealing({ id: null, o: 'H' })}
-                    >
-                      <span className="weapon-icon" aria-hidden="true">
-                        ❤️
-                      </span>
-                      <span className="weapon-name">Heal</span>
-                    </button>
-                  ))}
-              </ArsenalBar>
-            )}
-          </div>
           <div className="grid-wrap">
             <Grid
               board={player}
@@ -764,20 +769,6 @@ export default function App() {
               </span>
             )}
           </h2>
-          <div className="bar-row">
-            {phase === 'playing' && (
-              <ArsenalBar side="enemy" arsenal={state.arsenal.ai} active={aiFiring}>
-                {state.kits.ai && (
-                  <span className="weapon kit-btn enemy-kit" title="The enemy has a healing kit">
-                    <span className="weapon-icon" aria-hidden="true">
-                      ❤️
-                    </span>
-                    <span className="weapon-name">Heal</span>
-                  </span>
-                )}
-              </ArsenalBar>
-            )}
-          </div>
           <div className="grid-wrap">
             <Grid
               board={enemy}
@@ -797,6 +788,21 @@ export default function App() {
           </div>
           {phase !== 'placement' ? <FleetStatus board={enemy} title="Enemy ships" /> : <div />}
         </div>
+        {phase === 'playing' && (
+          <aside className="edge-bar edge-enemy">
+            <span className="edge-title">⬅ Enemy weapons</span>
+            <ArsenalBar side="enemy" arsenal={state.arsenal.ai} active={aiFiring}>
+              {state.kits.ai && (
+                <span className="weapon kit-btn enemy-kit" title="The enemy has a healing kit">
+                  <span className="weapon-icon" aria-hidden="true">
+                    ❤️
+                  </span>
+                  <span className="weapon-name">Heal</span>
+                </span>
+              )}
+            </ArsenalBar>
+          </aside>
+        )}
       </section>
       {phase === 'playing' && (
         <div className="extras">
