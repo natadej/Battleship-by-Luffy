@@ -5,6 +5,7 @@ import { Grid } from './components/Grid'
 import { SeaLayer } from './components/SeaLayer'
 import { strike } from './strikes'
 import { LeaderboardDialog, LeaderboardTable } from './components/Leaderboard'
+import { LevelMap, RewardsDialog } from './components/Rewards'
 import { type Level, LEVELS, aiMode, chooseShot } from './game/ai'
 import {
   type Board,
@@ -14,6 +15,7 @@ import {
   FLEET,
   canPlace,
   fire,
+  isSunk,
   placeShip,
   randomBoard,
   removeShip,
@@ -25,6 +27,22 @@ import { fleetPlaced, initialState, reducer } from './game/game'
 import { knowledgeOf, normalize, probabilityGrid } from './game/probability'
 import { healthOf } from './game/raid'
 import { computeScore, pct } from './game/score'
+import {
+  BADGES,
+  type ChestPrize,
+  DAILY_LEVEL,
+  type Progress,
+  buySkin,
+  comboBonus,
+  dayKey,
+  liveStreak,
+  loadProgress,
+  openChest,
+  recordBattle,
+  saveProgress,
+  seededRng,
+  starRow,
+} from './game/rewards'
 import {
   type Special,
   type Weapon,
@@ -175,6 +193,23 @@ export default function App() {
   const [burst, setBurst] = useState<{ board: 'player' | 'enemy'; at: Coord; key: number } | null>(null)
   /** The weapon the enemy is firing right now, lit up on its weapon bar. */
   const [aiFiring, setAiFiring] = useState<Weapon | null>(null)
+  const [progress, setProgressState] = useState<Progress>(loadProgress)
+  const setProgress = useCallback((update: (p: Progress) => Progress) => {
+    setProgressState((p) => {
+      const next = update(p)
+      saveProgress(next)
+      return next
+    })
+  }, [])
+  const [showRewards, setShowRewards] = useState(false)
+  const [daily, setDaily] = useState(false)
+  const campaignLevel = useRef<Level>(1)
+  const [combo, setCombo] = useState({ now: 0, best: 0, points: 0 })
+  const [comboPop, setComboPop] = useState<{ n: number; key: number } | null>(null)
+  const [reward, setReward] = useState<ReturnType<typeof recordBattle> | null>(null)
+  const [chest, setChest] = useState<ChestPrize | null>(null)
+  const recorded = useRef(false)
+  const today = dayKey(new Date())
   const [fullscreen, setFullscreen] = useState(() => typeof document !== 'undefined' && !!document.fullscreenElement)
 
   const { phase, player, enemy, turn, winner, level } = state
@@ -404,8 +439,18 @@ export default function App() {
 
   function start() {
     unlockAudio()
-    const enemyBoard = randomBoard()
-    dispatch({ type: 'start', enemy: enemyBoard, level })
+    const enemyBoard = randomBoard(daily ? seededRng(`daily-${today}`) : Math.random)
+    dispatch({ type: 'start', enemy: enemyBoard, level, bonus: progress.bonus })
+    if (progress.bonus) {
+      const bonus = WEAPON_INFO[progress.bonus].name
+      setProgress((p) => ({ ...p, bonus: null }))
+      setTimeout(() => setNotice(`🎁 Lucky chest bonus: +1 ${bonus}!`), 0)
+    }
+    setCombo({ now: 0, best: 0, points: 0 })
+    setComboPop(null)
+    setReward(null)
+    setChest(null)
+    recorded.current = false
     dropRound.current = 3 + Math.floor(Math.random() * 10)
     if (!document.fullscreenElement && matchMedia('(pointer: coarse)').matches) void enterFullscreen()
     setWeapon('missile')
@@ -417,6 +462,33 @@ export default function App() {
     setAssisted(shade)
     setSubmitted(null)
   }
+
+  // Stars, coins, badges and the daily streak are paid out once when a battle ends.
+  useEffect(() => {
+    if (phase !== 'over' || recorded.current) return
+    recorded.current = true
+    const { shots, hits } = state.tally.player
+    const result = recordBattle(
+      progress,
+      {
+        won: winner === 'player',
+        accuracy: shots ? hits / shots : 0,
+        level,
+        bestCombo: combo.best,
+        shipsLost: player.ships.filter((p) => isSunk(player, p)).length,
+        daily,
+      },
+      today,
+    )
+    setProgress(() => result.progress)
+    setReward(result)
+  }, [phase, progress, state.tally, winner, level, combo.best, player, daily, today, setProgress])
+
+  useEffect(() => {
+    if (!comboPop) return
+    const t = setTimeout(() => setComboPop(null), 1400)
+    return () => clearTimeout(t)
+  }, [comboPop])
 
   // A square tapped while waiting fires as soon as the turn comes back.
   useEffect(() => {
@@ -447,6 +519,10 @@ export default function App() {
     if (s.phase !== 'playing' || s.enemy.shots[coord.r][coord.c]) return setInFlight(null)
     playShotSound(s.enemy, cells)
     setLastPlayerShot(coord)
+    const struck = cells.some((p) => shipAt(s.enemy, p) && s.enemy.shots[p.r][p.c] === null)
+    const n = struck ? combo.now + 1 : 0
+    setCombo({ now: n, best: Math.max(combo.best, n), points: combo.points + comboBonus(n, level) })
+    if (n >= 2) setComboPop({ n, key: Date.now() })
     if (onCrate(cells, s.crates.enemy)) {
       hearts('enemy', s.crates.enemy!)
       setNotice('💖 You got the healing box! Tap ❤️ Heal to fix a ship.')
@@ -471,10 +547,35 @@ export default function App() {
     setHealing(null)
     setHover(null)
     setNotice(`Your ${picked.name} is repaired and has moved.`)
+    setProgress((p) => (p.badges.includes('healer') ? p : { ...p, badges: [...p.badges, 'healer'] }))
+  }
+
+  /** Turns the daily challenge on or off; the campaign level is put back afterwards. */
+  function toggleDaily() {
+    if (!daily) campaignLevel.current = level
+    dispatch({ type: 'setLevel', level: daily ? campaignLevel.current : DAILY_LEVEL })
+    setDaily(!daily)
+  }
+
+  function openLuckyChest() {
+    const prize = openChest()
+    setChest(prize)
+    playReward()
+    setProgress((p) => (prize.kind === 'coins' ? { ...p, coins: p.coins + prize.amount } : { ...p, bonus: prize.weapon }))
   }
 
   /** Next level after a win (keeping the campaign totals), or a new campaign from level 1. */
   function playAgain() {
+    if (daily) {
+      setDaily(false)
+      dispatch({ type: 'reset' })
+      dispatch({ type: 'setLevel', level: campaignLevel.current })
+      setSelectedId(FLEET[0].id)
+      setHealing(null)
+      setLastAiShot(null)
+      setLastPlayerShot(null)
+      return
+    }
     const next = cleared && level < 5
     setCampaign(next ? totals : NEW_CAMPAIGN)
     dispatch({ type: 'reset' })
@@ -506,10 +607,10 @@ export default function App() {
 
   const { shots: fired, hits } = state.tally.player
   const stats = { shots: fired, hits, accuracy: fired ? hits / fired : 0 }
-  const score = computeScore({ accuracy: stats.accuracy, level, won: winner === 'player', assisted })
+  const score = computeScore({ accuracy: stats.accuracy, level, won: winner === 'player', assisted, combo: combo.points })
   const cleared = winner === 'player'
   /** The campaign ends on a loss or after beating level 5; only then does the total go on the leaderboard. */
-  const campaignOver = !cleared || level === 5
+  const campaignOver = !daily && (!cleared || level === 5)
   const totals: Campaign = {
     total: campaign.total + score,
     shots: campaign.shots + stats.shots,
@@ -572,7 +673,7 @@ export default function App() {
                 : 'Watch out! The enemy is aiming…'
 
   return (
-    <main className={`app phase-${phase}`}>
+    <main className={`app phase-${phase} ${progress.ship} ${progress.sea}`}>
       <div className="rotate-overlay" role="alertdialog" aria-label="Rotate your phone">
         <div className="rotate-phone" aria-hidden="true" />
         <p>Turn your phone sideways to play! 🔄</p>
@@ -615,6 +716,7 @@ export default function App() {
 
       {phase === 'placement' && (
         <section className="controls" aria-label="Fleet placement">
+          <LevelMap level={daily ? campaignLevel.current : level} stars={progress.stars} daily={daily} />
           <div className="actions">
             <button type="button" onClick={randomize}>
               🎲 Randomize
@@ -622,12 +724,26 @@ export default function App() {
             <button type="button" onClick={clearBoard}>
               🧹 Clear
             </button>
+            <button type="button" className="coins-btn" onClick={() => setShowRewards(true)}>
+              🎒 {progress.coins} 🪙
+            </button>
+            <button type="button" className={`daily-btn ${daily ? 'on' : ''}`} aria-pressed={daily} onClick={toggleDaily}>
+              📅 Daily {liveStreak(progress.daily, today) ? `🔥${liveStreak(progress.daily, today)}` : ''}
+              {progress.daily.last === today && ' ✓'}
+            </button>
           </div>
+          {daily ? (
+            <p className="level-hint">
+              Daily challenge: today's enemy fleet is hidden in the same spots for everyone. Beat the level {DAILY_LEVEL}{' '}
+              {LEVELS[DAILY_LEVEL - 1].name} to grow your streak{progress.daily.last === today ? ' (already won today)' : ' and win 🪙 50'}.
+            </p>
+          ) : (
           <p className="level-hint">
             Level {level} of 5: {levelInfo.strategy}. Score ×{level}. Win to move up a level; your scores add up and go on the leaderboard when
             the campaign ends.
             {campaign.total > 0 && ` Campaign total so far: ${campaign.total}.`}
           </p>
+          )}
           <button type="button" className="primary start-btn" disabled={!fleetPlaced(player)} onClick={start}>
             ⚔️ Start battle!
           </button>
@@ -645,12 +761,45 @@ export default function App() {
       {phase === 'over' && (
         <section className="game-over" aria-label="Result">
           <h2 className={`winner-banner winner-${winner}`}>
-            {cleared
+            {daily
+              ? cleared
+                ? `📅 Daily challenge won! Streak: ${liveStreak(progress.daily, today)} day${liveStreak(progress.daily, today) === 1 ? '' : 's'} 🔥`
+                : "The daily fleet got away. Try again or come back tomorrow!"
+              : cleared
               ? level === 5
                 ? `🏆 Congratulations${name.trim() ? `, ${name.trim()}` : ''}! You beat all 5 levels.`
                 : `Level ${level} cleared! Next up: level ${level + 1}, ${LEVELS[level].name}.`
               : `The enemy ${levelInfo.name} wins this time. Your campaign ends at level ${level}.`}
           </h2>
+          {reward && (
+            <div className="reward-strip">
+              {!daily && cleared && (
+                <span className="stars-won" aria-label={`${reward.stars} of 3 stars`}>
+                  {starRow(reward.stars)}
+                </span>
+              )}
+              {reward.coins > 0 && <span className="coins-won">+{reward.coins} 🪙</span>}
+              {combo.best >= 2 && <span>Best combo ×{combo.best}</span>}
+              {reward.badges.map((id) => {
+                const b = BADGES.find((x) => x.id === id)!
+                return (
+                  <span key={id} className="badge-won">
+                    {b.icon} New badge: {b.name}
+                  </span>
+                )
+              })}
+            </div>
+          )}
+          {cleared &&
+            (chest ? (
+              <p className="chest-prize">
+                🎁 {chest.kind === 'coins' ? `You found ${chest.amount} coins!` : `+1 ${WEAPON_INFO[chest.weapon].name} in your next battle!`}
+              </p>
+            ) : (
+              <button type="button" className="chest-btn" onClick={openLuckyChest}>
+                <span aria-hidden="true">🎁</span> Open the lucky chest!
+              </button>
+            ))}
           <p className="lb-note">
             Your fleet {pct(healthOf(player))} · Enemy fleet {pct(healthOf(enemy))}
           </p>
@@ -691,7 +840,7 @@ export default function App() {
           ) : null}
           <LeaderboardTable highlight={submitted} />
           <button type="button" className="primary" onClick={playAgain}>
-            {campaignOver ? 'New campaign from level 1' : `Next: level ${level + 1}`}
+            {daily ? 'Back to the campaign' : campaignOver ? 'New campaign from level 1' : `Next: level ${level + 1}`}
           </button>
         </section>
       )}
@@ -814,6 +963,14 @@ export default function App() {
 
       {phase !== 'over' && <SeaLayer />}
       {showBoard && <LeaderboardDialog onClose={() => setShowBoard(false)} />}
+      {showRewards && (
+        <RewardsDialog progress={progress} today={today} onBuy={(id) => setProgress((p) => buySkin(p, id))} onClose={() => setShowRewards(false)} />
+      )}
+      {comboPop && (
+        <div key={comboPop.key} className="combo-pop" aria-live="polite">
+          ×{comboPop.n} COMBO!
+        </div>
+      )}
     </main>
   )
 }
