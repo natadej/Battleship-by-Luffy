@@ -682,128 +682,6 @@ kbd {
   box-shadow: 0 0 10px rgb(255 140 30 / 0.4);
 }
 
-/* Artillery: a cannon riding the edge of each board, and the rocket in flight. */
-.grid-wrap {
-  position: relative;
-  padding: 16px;
-  margin: -8px;
-}
-
-.cannon {
-  position: absolute;
-  z-index: 6;
-  width: 26px;
-  height: 26px;
-  transform: translate(-50%, -50%);
-  pointer-events: none;
-}
-
-.cannon-base {
-  position: absolute;
-  inset: 3px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 35%, #8aa0b8, #34465c 70%);
-  border: 2px solid #0d1a2a;
-  box-shadow: 0 2px 6px rgb(0 0 0 / 0.5);
-}
-
-.cannon-enemy .cannon-base {
-  background: radial-gradient(circle at 35% 35%, #d38a8a, #5c2a2a 70%);
-}
-
-.cannon-turret {
-  position: absolute;
-  inset: 0;
-}
-
-.cannon-barrel {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 18px;
-  height: 7px;
-  margin-top: -3.5px;
-  border-radius: 2px 3px 3px 2px;
-  background: linear-gradient(#c9d4e0, #56677b);
-  border: 1px solid #0d1a2a;
-}
-
-.cannon-flash {
-  position: absolute;
-  left: calc(50% + 18px);
-  top: 50%;
-  width: 14px;
-  height: 14px;
-  margin: -7px 0 0 -4px;
-  border-radius: 50%;
-  background: radial-gradient(circle, #fff6c2, #ffb13b 50%, transparent 70%);
-  opacity: 0;
-}
-
-.cannon.firing .cannon-barrel {
-  animation: recoil 0.3s ease-out;
-}
-
-.cannon.firing .cannon-flash {
-  animation: muzzle 0.3s ease-out;
-}
-
-@keyframes recoil {
-  30% {
-    transform: translateX(-5px);
-  }
-}
-
-@keyframes muzzle {
-  0% {
-    opacity: 1;
-    transform: scale(0.6);
-  }
-  100% {
-    opacity: 0;
-    transform: scale(1.8);
-  }
-}
-
-.rocket-layer {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  pointer-events: none;
-  overflow: hidden;
-}
-
-.rocket {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 0;
-  height: 0;
-}
-
-.rocket-body {
-  position: absolute;
-  left: -9px;
-  top: -3px;
-  width: 18px;
-  height: 6px;
-  border-radius: 1px 6px 6px 1px;
-  background: linear-gradient(#f1f1f1, #9aa4ae);
-  box-shadow: 0 0 6px rgb(255 200 120 / 0.8);
-}
-
-.rocket-trail {
-  position: absolute;
-  right: 6px;
-  top: -3px;
-  width: 34px;
-  height: 6px;
-  border-radius: 6px;
-  background: linear-gradient(to left, #ffd36b, #ff7a1a 35%, rgb(255 255 255 / 0.25) 70%, transparent);
-  filter: blur(1px);
-  animation: flicker 0.08s steps(2) infinite;
-}
-
 /* Game over: score and leaderboard. */
 .game-over {
   display: flex;
@@ -1165,6 +1043,82 @@ kbd {
   .health {
     height: 11px;
   }
+}
+
+/* Weapon choice above the enemy board. */
+.weapon-bar {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin: 0 0 8px;
+}
+
+.weapon {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 0.85rem;
+  border-radius: 999px;
+}
+
+.weapon small {
+  opacity: 0.75;
+  font-size: 0.75em;
+}
+
+.weapon.on {
+  background: #ffd36b;
+  border-color: #ffd36b;
+  color: #1b1300;
+  font-weight: 700;
+}
+
+.weapon:disabled {
+  opacity: 0.35;
+  text-decoration: line-through;
+}
+
+/* Squares the chosen weapon will cover. */
+.cell.aim-area::after {
+  background: rgb(255 211 107 / 0.28);
+  box-shadow: inset 0 0 0 1px rgb(255 211 107 / 0.7);
+}
+
+/* Healing box: a floating crate with a red cross. */
+.crate {
+  position: relative;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  z-index: 3;
+  animation: bob 2.4s ease-in-out infinite;
+}
+
+.crate-icon {
+  display: inline-block;
+  width: min(70%, 26px);
+  aspect-ratio: 1;
+  border-radius: 4px;
+  border: 2px solid #8a5a1f;
+  background:
+    linear-gradient(#e5484d, #e5484d) center / 22% 64% no-repeat,
+    linear-gradient(#e5484d, #e5484d) center / 64% 22% no-repeat,
+    #f4e3c1;
+  box-shadow: 0 0 10px rgb(255 255 255 / 0.6);
+}
+
+.kit-bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  margin: 0 0 8px;
+}
+
+.kit-bar .crate-icon {
+  width: 22px;
 }
 
 /* Square tapped early: fires as soon as it's your turn. */

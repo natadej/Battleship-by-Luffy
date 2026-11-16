@@ -248,16 +248,3 @@ export function playNuke() {
   const roar = noiseBurst(ac, t, 3.8, 'lowpass', 3500, 1)
   roar.frequency.exponentialRampToValueAtTime(50, t + 3.8)
 }
-
-/** Napalm: a whoomp as it ignites, then the roar and crackle of fire. */
-export function playNapalm() {
-  const ac = audio()
-  if (!ac || muted) return
-  const t = ac.currentTime + IMPACT_DELAY_S
-  thump(ac, t, 110, 40, 0.5, 0.8)
-  const whoosh = noiseBurst(ac, t, 0.5, 'bandpass', 400, 0.7)
-  whoosh.frequency.exponentialRampToValueAtTime(1600, t + 0.5)
-  const roar = noiseBurst(ac, t + 0.1, 1.8, 'lowpass', 900, 0.55)
-  roar.frequency.exponentialRampToValueAtTime(200, t + 1.9)
-  for (let i = 0; i < 24; i++) noiseBurst(ac, t + 0.15 + Math.random() * 1.6, 0.03, 'highpass', 3000, 0.15)
-}
