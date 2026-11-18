@@ -35,7 +35,7 @@ export interface Skin {
 }
 
 export const SKINS: Skin[] = [
-  { id: 'ship-sunny', kind: 'ship', name: 'Sunny', icon: '🟡', price: 0 },
+  { id: 'ship-sunny', kind: 'ship', name: 'Snowy', icon: '⚪', price: 0 },
   { id: 'ship-bubblegum', kind: 'ship', name: 'Bubblegum', icon: '🩷', price: 60 },
   { id: 'ship-jungle', kind: 'ship', name: 'Jungle', icon: '🟢', price: 100 },
   { id: 'ship-galaxy', kind: 'ship', name: 'Galaxy', icon: '🟣', price: 150 },

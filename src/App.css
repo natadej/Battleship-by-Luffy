@@ -1032,7 +1032,7 @@ kbd {
   }
 
   .grid {
-    --cell: min(calc((50vw - 70px) / 10), calc((100dvh - 290px) / 10), 46px);
+    --cell: min(calc((50vw - 140px) / 10), calc((100dvh - 250px) / 10), 46px);
     grid-template-columns: 16px repeat(10, var(--cell));
     grid-template-rows: 16px repeat(10, var(--cell));
   }
@@ -1285,7 +1285,7 @@ kbd {
 
   /* Leave room for the weapon and kit bars. */
   .phase-playing .grid {
-    --cell: min(calc((100dvh - 172px) / 10), calc((50vw - 90px) / 10));
+    --cell: min(calc((100dvh - 185px) / 10), calc((50vw - 140px) / 10));
   }
 }
 
@@ -1432,7 +1432,7 @@ h1 {
 /* Both sides share the same rows (title, weapons, board, ships), so the two boards always line up. */
 .board-panel {
   display: grid;
-  grid-row: span 4;
+  grid-row: span 3;
   grid-template-rows: subgrid;
   row-gap: 8px;
   justify-items: center;
@@ -2004,6 +2004,176 @@ h1 {
   .weapon-name {
     display: none;
   }
+}
+
+/* Weapon bars sit on the far outside edges, away from the boards they don't fire at. */
+.phase-playing .boards {
+  grid-template-columns: repeat(4, auto);
+}
+
+.edge-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  align-self: center;
+  gap: 8px;
+  grid-row: 1 / span 3;
+  padding: 0 6px;
+}
+
+.edge-player {
+  grid-column: 1;
+}
+
+.phase-playing .side-player {
+  grid-column: 2;
+}
+
+.phase-playing .side-enemy {
+  grid-column: 3;
+}
+
+.edge-enemy {
+  grid-column: 4;
+}
+
+.edge-title {
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  text-shadow: 0 1px 0 var(--ink);
+}
+
+.edge-bar .weapon-bar {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 6px;
+  width: auto;
+  min-width: 0;
+}
+
+.edge-bar .weapon,
+.edge-bar .kit-btn {
+  justify-content: flex-start;
+  margin: 0;
+}
+
+.edge-bar .kit-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Upright tablets and foldables: the bars go under the boards, in the outer corners. */
+@media (orientation: portrait) and (min-aspect-ratio: 2/3) and (max-width: 1100px), (max-width: 860px) and (pointer: fine) {
+  .phase-playing .boards {
+    grid-template-columns: repeat(2, auto);
+  }
+
+  .phase-playing .side-player,
+  .phase-playing .side-enemy {
+    grid-row: 1 / span 3;
+  }
+
+  .phase-playing .side-player {
+    grid-column: 1;
+  }
+
+  .phase-playing .side-enemy {
+    grid-column: 2;
+  }
+
+  .edge-bar {
+    grid-row: 4;
+    align-self: start;
+    padding: 0 10px 10px;
+  }
+
+  .edge-player {
+    grid-column: 1;
+    justify-self: start;
+  }
+
+  .edge-enemy {
+    grid-column: 2;
+    justify-self: end;
+  }
+
+  .edge-bar .weapon-bar,
+  .edge-bar .kit-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 860px) and (pointer: fine) {
+  .phase-playing .side-player,
+  .phase-playing .side-enemy,
+  .edge-player,
+  .edge-enemy {
+    grid-column: 1;
+    grid-row: auto;
+  }
+}
+
+/* Hits and misses differ by shape, not only colour: a dark badge with a white X, or a hollow white ring. */
+.mark-hit::before,
+.mark-hit::after {
+  grid-area: 1 / 1;
+}
+
+.mark-hit::before {
+  content: '';
+  width: 72%;
+  height: 72%;
+  border-radius: 50%;
+  background: var(--ink);
+  box-shadow:
+    0 0 0 2px #fff,
+    0 0 8px 2px rgb(0 0 0 / 0.4);
+  animation: none;
+}
+
+.mark-hit::after {
+  content: '';
+  width: 46%;
+  height: 46%;
+  background:
+    linear-gradient(45deg, transparent 40%, #fff 40% 60%, transparent 60%),
+    linear-gradient(-45deg, transparent 40%, #fff 40% 60%, transparent 60%);
+}
+
+.cell.miss {
+  background: rgb(0 40 90 / 0.28);
+}
+
+.mark-miss::before {
+  width: 40%;
+  height: 40%;
+  border: 3px solid #fff;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* Your ships are white and blue so they never look like a hit. */
+.side-player .ship-hull {
+  fill: #f7fbff;
+}
+
+.side-player .ship-deck {
+  fill: #bfe3ff;
+}
+
+.side-player .ship-detail {
+  fill: #3a86ff;
+}
+
+.side-player .ship-turret {
+  fill: var(--ink);
 }
 
 /* Rewards: level map, combo pop, result strip, lucky chest, rewards dialog and skins. */
