@@ -14,7 +14,7 @@ import {
   removeShip,
   inBounds,
 } from './board'
-import { type Arsenal, type Weapon, fullArsenal, onCrate } from './weapons'
+import { type Arsenal, type Special, type Weapon, fullArsenal, onCrate } from './weapons'
 
 export type Phase = 'placement' | 'playing' | 'over'
 export type Side = 'player' | 'ai'
@@ -51,7 +51,7 @@ export type Action =
   | { type: 'place'; ship: ShipDef; start: Coord; orientation: Orientation }
   | { type: 'remove'; id: string }
   | { type: 'setPlayerBoard'; board: Board }
-  | { type: 'start'; enemy: Board; level: Level; crates?: GameState['crates'] }
+  | { type: 'start'; enemy: Board; level: Level; crates?: GameState['crates']; bonus?: Special | null }
   | { type: 'playerFire'; coord: Coord; weapon?: Weapon; cells?: Coord[] }
   | { type: 'aiFire'; coord: Coord; weapon?: Weapon; cells?: Coord[] }
   | { type: 'heal'; side: Side; id: string; cells: Coord[] }
@@ -151,6 +151,9 @@ export function reducer(state: GameState, action: Action): GameState {
         crates: action.crates ?? { player: null, enemy: null },
         dropped: !!action.crates,
         round: 0,
+        arsenal: action.bonus
+          ? { ...state.arsenal, player: { ...state.arsenal.player, [action.bonus]: state.arsenal.player[action.bonus] + 1 } }
+          : state.arsenal,
       }
     case 'playerFire': {
       const { coord } = action

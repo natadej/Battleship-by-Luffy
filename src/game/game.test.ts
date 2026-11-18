@@ -41,3 +41,12 @@ describe('game reducer', () => {
     expect(s.winner).toBe('player')
   })
 })
+
+describe('lucky chest bonus', () => {
+  it('adds one extra special to the player for the next battle', () => {
+    const placed = reducer(initialState(), { type: 'setPlayerBoard', board: randomBoard(seeded(5)) })
+    const s = reducer(placed, { type: 'start', enemy: randomBoard(), level: 1, bonus: 'nuke' })
+    expect(s.arsenal.player.nuke).toBe(3)
+    expect(s.arsenal.ai.nuke).toBe(2)
+  })
+})

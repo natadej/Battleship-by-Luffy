@@ -27,9 +27,9 @@ export const WIN_BONUS = 500
  * Score = (accuracy × 1000 + win bonus) × level, halved when the probability shade was used.
  * Accuracy dominates, so the leaderboard rewards whoever wastes the fewest shots.
  */
-export function computeScore(o: { accuracy: number; level: Level; won: boolean; assisted: boolean }): number {
-  const base = o.accuracy * 1000 + (o.won ? WIN_BONUS : 0)
-  return Math.round(base * o.level * (o.assisted ? 0.5 : 1))
+export function computeScore(o: { accuracy: number; level: Level; won: boolean; assisted: boolean; combo?: number }): number {
+  const base = (o.accuracy * 1000 + (o.won ? WIN_BONUS : 0)) * o.level + (o.combo ?? 0)
+  return Math.round(base * (o.assisted ? 0.5 : 1))
 }
 
 export const pct = (x: number) => `${Math.round(x * 100)}%`
