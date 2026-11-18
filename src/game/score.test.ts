@@ -22,3 +22,10 @@ describe('score', () => {
     expect(computeScore({ ...base, assisted: true })).toBe(250)
   })
 })
+
+describe('combo bonus', () => {
+  it('adds combo points on top and halves them with the shade', () => {
+    expect(computeScore({ accuracy: 0.5, level: 2, won: true, assisted: false, combo: 100 })).toBe(2100)
+    expect(computeScore({ accuracy: 0.5, level: 2, won: true, assisted: true, combo: 100 })).toBe(1050)
+  })
+})

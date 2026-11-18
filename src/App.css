@@ -2175,3 +2175,331 @@ h1 {
 .side-player .ship-turret {
   fill: var(--ink);
 }
+
+/* Rewards: level map, combo pop, result strip, lucky chest, rewards dialog and skins. */
+.level-map {
+  display: flex;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+  justify-content: center;
+}
+
+.level-map.dimmed {
+  opacity: 0.45;
+}
+
+.island {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  min-width: 52px;
+  padding: 4px 6px 3px;
+  border: 3px solid var(--ink);
+  border-radius: 16px 16px 22px 22px;
+  background: linear-gradient(#fff3b0 60%, #7fdcff 60%);
+  box-shadow: 0 3px 0 var(--ink);
+  line-height: 1.1;
+}
+
+.island + .island::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: calc(100% + 1px);
+  width: 6px;
+  border-top: 3px dashed var(--ink);
+}
+
+.island-icon {
+  font-size: 1.1rem;
+}
+
+.island-here {
+  background: linear-gradient(#ffd95a 60%, #3cc8ff 60%);
+  animation: island-bob 1.6s ease-in-out infinite;
+}
+
+.island-locked {
+  filter: grayscale(0.8);
+  opacity: 0.6;
+}
+
+.island-stars {
+  color: #f4a100;
+  font-size: 0.75rem;
+  letter-spacing: -1px;
+}
+
+@keyframes island-bob {
+  50% {
+    translate: 0 -3px;
+  }
+}
+
+.daily-btn.on {
+  background: #ffd95a;
+}
+
+.coins-btn {
+  font-weight: 700;
+}
+
+.combo-pop {
+  position: fixed;
+  top: 38%;
+  left: 50%;
+  z-index: 40;
+  translate: -50% -50%;
+  padding: 6px 18px;
+  border: 4px solid var(--ink);
+  border-radius: 999px;
+  background: linear-gradient(#ffe066, #ff9f1c);
+  color: var(--ink);
+  font-size: clamp(1.4rem, 5vw, 2.4rem);
+  font-weight: 700;
+  pointer-events: none;
+  animation: combo-pop 1.4s ease-out forwards;
+}
+
+@keyframes combo-pop {
+  0% {
+    scale: 0.3;
+    opacity: 0;
+  }
+  20% {
+    scale: 1.15;
+    opacity: 1;
+  }
+  35% {
+    scale: 1;
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    translate: -50% -110%;
+    opacity: 0;
+  }
+}
+
+.reward-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  align-items: center;
+  margin: 4px 0;
+  font-weight: 700;
+}
+
+.stars-won {
+  color: #f4a100;
+  font-size: 2rem;
+  letter-spacing: 2px;
+  text-shadow: 0 2px 0 var(--ink);
+}
+
+.coins-won,
+.badge-won {
+  padding: 2px 10px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: #fff3b0;
+}
+
+.chest-btn {
+  font-size: 1.1rem;
+  animation: chest-wiggle 1.2s ease-in-out infinite;
+}
+
+.chest-prize {
+  margin: 4px 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+@keyframes chest-wiggle {
+  0%,
+  60%,
+  100% {
+    rotate: 0deg;
+  }
+  70% {
+    rotate: -6deg;
+  }
+  80% {
+    rotate: 6deg;
+  }
+  90% {
+    rotate: -3deg;
+  }
+}
+
+.modal.rewards {
+  max-height: 88vh;
+  overflow-y: auto;
+}
+
+.modal.rewards h3 {
+  margin: 12px 0 6px;
+}
+
+.reward-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 0;
+  font-weight: 700;
+}
+
+.badge-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.badge-grid li {
+  display: grid;
+  justify-items: center;
+  padding: 6px;
+  border: 3px solid var(--ink);
+  border-radius: 14px;
+  background: #fff3b0;
+  text-align: center;
+}
+
+.badge-grid li.locked {
+  filter: grayscale(1);
+  opacity: 0.5;
+}
+
+.badge-icon {
+  font-size: 1.6rem;
+}
+
+.badge-grid small {
+  font-size: 0.7rem;
+}
+
+.skin-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.skin {
+  display: grid;
+  justify-items: center;
+  min-width: 84px;
+  padding: 6px 8px;
+}
+
+.skin.on {
+  background: #ffd95a;
+}
+
+.skin-swatch {
+  font-size: 1.4rem;
+}
+
+/* Ship skins recolour your own fleet only. */
+.ship-bubblegum .side-player .ship-hull {
+  fill: #ff8fc7;
+}
+.ship-bubblegum .side-player .ship-deck {
+  fill: #ffc2e2;
+}
+.ship-bubblegum .side-player .ship-detail {
+  fill: #d63384;
+}
+.ship-jungle .side-player .ship-hull {
+  fill: #5ccf6b;
+}
+.ship-jungle .side-player .ship-deck {
+  fill: #a8eb9f;
+}
+.ship-jungle .side-player .ship-detail {
+  fill: #2b8a3e;
+}
+.ship-galaxy .side-player .ship-hull {
+  fill: #9b7bff;
+}
+.ship-galaxy .side-player .ship-deck {
+  fill: #cbbcff;
+}
+.ship-galaxy .side-player .ship-detail {
+  fill: #5f3dc4;
+}
+.ship-gold .side-player .ship-hull {
+  fill: #e0b23c;
+}
+.ship-gold .side-player .ship-deck {
+  fill: #3a3a3a;
+}
+.ship-gold .side-player .ship-detail {
+  fill: #9c6b00;
+}
+
+.sea-sunset .boards {
+  background-image:
+    radial-gradient(circle at 50% 0%, rgb(255 230 120 / 0.55), transparent 45%),
+    linear-gradient(180deg, #ff9a6b, #c2549b 55%, #4a3b9c);
+}
+
+.sea-night .boards {
+  background-image:
+    radial-gradient(1.5px 1.5px at 20% 15%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 70% 8%, #fff, transparent),
+    radial-gradient(2px 2px at 45% 25%, #fffbe0, transparent),
+    radial-gradient(1.5px 1.5px at 88% 30%, #fff, transparent),
+    radial-gradient(circle at 85% 12%, rgb(255 250 210 / 0.7) 3%, transparent 4%),
+    linear-gradient(180deg, #1b2a6b, #0b1440);
+}
+
+.sea-candy .boards {
+  background-image:
+    repeating-linear-gradient(45deg, rgb(255 255 255 / 0.18) 0 14px, transparent 14px 28px),
+    linear-gradient(180deg, #ffb3d9, #9ad8ff);
+}
+
+@media (max-width: 900px), (max-height: 800px) {
+  .level-map {
+    margin-bottom: 4px;
+  }
+
+  .island {
+    min-width: 40px;
+    padding: 2px 4px;
+    border-width: 2px;
+  }
+
+  .island-icon {
+    display: none;
+  }
+}
+
+@media (max-height: 500px) {
+  .level-map {
+    gap: 3px;
+  }
+
+  .island {
+    min-width: 28px;
+    padding: 1px 2px;
+    border-radius: 10px;
+    box-shadow: none;
+  }
+
+  .island + .island::before {
+    display: none;
+  }
+
+  .island-stars {
+    font-size: 0.55rem;
+  }
+}
