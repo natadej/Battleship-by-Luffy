@@ -1,0 +1,14 @@
+# Global leaderboard API for Battleship by Luffy (Cloudflare Workers + D1).
+# Copy to wrangler.toml (gitignored) and fill in the placeholders. See README.
+name = "battleship-api"
+main = "src/index.ts"
+compatibility_date = "2026-11-01"
+workers_dev = true
+
+[vars]
+ALLOWED_ORIGINS = "https://<your-github-user>.github.io"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "battleship-leaderboard"
+database_id = "<your-d1-database-id>"

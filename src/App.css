@@ -710,6 +710,31 @@ kbd {
   font-size: 1.6rem;
 }
 
+.lb-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.lb-tabs button {
+  flex: 1;
+  padding: 6px 10px;
+  border: 3px solid var(--ink);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--ink);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* Selected tab: inverted colours plus an underline, not colour alone. */
+.lb-tabs button.on {
+  background: var(--ink);
+  color: #fff;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
 .result-stats span,
 .lb-note {
   color: var(--muted);

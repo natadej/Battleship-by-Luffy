@@ -50,9 +50,30 @@ src/game/probability.ts  ship-placement probability map (level 5 + shade)
 src/game/score.ts        accuracy and score
 src/game/game.ts         game reducer: phases, turns, win detection
 src/artillery.ts         cannon + rocket animation (Web Animations API)
-src/leaderboard.ts       localStorage leaderboard
+src/leaderboard.ts       device leaderboard + upload queue for the global board
 src/components/          Grid, Cannon, FleetStatus, Leaderboard UI
 src/App.tsx              wiring, drag & drop, turn timing
 ```
 
 Game logic is framework-free and immutable, so it's unit-tested directly without rendering React.
+
+## Global leaderboard (`worker/`)
+
+A Cloudflare Worker (`battleship-api`) with a D1 database stores the world scores:
+
+- `GET /scores?limit=20` returns the top scores.
+- `POST /scores` adds one. The server checks every field, cleans the name, ignores repeated ids (so retries are safe) and allows 6 posts a minute per IP.
+
+The game always saves to the device first, then uploads. Scores saved offline wait in a queue and upload on the next start or when the device reconnects.
+
+The build reads the API address from `VITE_LEADERBOARD_URL`: put it in `.env.local` for local builds, and in the repo's Actions secret of the same name for GitHub Pages. Without it, the game shows the device leaderboard only.
+
+Deploy (needs `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in the environment):
+
+```sh
+cd worker
+cp wrangler.example.toml wrangler.toml   # fill in the D1 database id and your Pages origin
+npx wrangler@4 d1 execute battleship-leaderboard --remote --file schema.sql
+npx wrangler@4 deploy
+```
+
