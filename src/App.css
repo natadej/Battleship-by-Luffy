@@ -1990,8 +1990,18 @@ h1 {
     font-size: 0.85rem;
   }
 
+  /* No room below the boards: pin Hint glow in the bottom-right corner, under the enemy weapon bar. */
   .extras {
-    margin-top: 6px;
+    position: fixed;
+    right: 10px;
+    bottom: 8px;
+    z-index: 5;
+    margin: 0;
+  }
+
+  .shade-toggle {
+    padding: 4px 10px;
+    font-size: 0.8rem;
   }
 
   .fx > .fx-word {
