@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Cloudflare Worker: real IDs stay local
+worker/wrangler.toml
+worker/.wrangler

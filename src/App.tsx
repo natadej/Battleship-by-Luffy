@@ -56,7 +56,7 @@ import {
   onCrate,
   relocation,
 } from './game/weapons'
-import { type ScoreEntry, saveName, savedName, submitScore } from './leaderboard'
+import { type ScoreEntry, flushPending, saveName, savedName, submitScore } from './leaderboard'
 import { isMuted, playExplosion, playReward, playSplash, setMuted, unlockAudio } from './sound'
 import './App.css'
 import type { CSSProperties } from 'react'
@@ -215,6 +215,13 @@ export default function App() {
   const { phase, player, enemy, turn, winner, level } = state
   const selected = FLEET.find((s) => s.id === selectedId) ?? null
   const nextUnplaced = (board: Board) => FLEET.find((s) => !board.ships.some((p) => p.id === s.id))?.id ?? null
+
+  useEffect(() => {
+    const upload = () => void flushPending()
+    upload()
+    window.addEventListener('online', upload)
+    return () => window.removeEventListener('online', upload)
+  }, [])
 
   const playerRef = useRef(player)
   useEffect(() => {
