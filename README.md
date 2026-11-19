@@ -66,7 +66,7 @@ A Cloudflare Worker (`battleship-api`) with a D1 database stores the world score
 
 The game always saves to the device first, then uploads. Scores saved offline wait in a queue and upload on the next start or when the device reconnects.
 
-The build reads the API address from `VITE_LEADERBOARD_URL`: put it in `.env.local` for local builds, and in the repo's Actions secret of the same name for GitHub Pages. Without it, the game shows the device leaderboard only.
+The build reads the API address from `VITE_LEADERBOARD_URL`: put it in `.env.local` for local builds; the GitHub Pages build sets it in `.github/workflows/pages.yml`. Without it, the game shows the device leaderboard only.
 
 Deploy (needs `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in the environment):
 
