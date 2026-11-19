@@ -64,28 +64,31 @@ let flushing: Promise<number> | null = null
 /** Uploads queued scores; returns how many were accepted. Stops at the first network/server error. */
 export function flushPending(fetchFn: typeof fetch = fetch): Promise<number> {
   if (!hasGlobal()) return Promise.resolve(0)
-  flushing ??= (async () => {
-    let sent = 0
-    try {
-      for (const entry of pendingUploads()) {
-        const res = await fetchFn(`${apiUrl()}/scores`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(entry),
-        })
-        // Retry later on rate limits and server errors; drop entries the server rejects as invalid.
-        if (res.status === 429 || res.status >= 500) break
-        localStorage.setItem(PENDING_KEY, JSON.stringify(pendingUploads().filter((e) => e.id !== entry.id)))
-        if (res.ok) sent++
-      }
-    } catch {
-      // Offline: keep the queue for next time.
-    } finally {
-      flushing = null
-    }
-    return sent
-  })()
+  // `.finally` always runs after this assignment, even when the queue is empty.
+  flushing ??= uploadQueue(fetchFn).finally(() => {
+    flushing = null
+  })
   return flushing
+}
+
+async function uploadQueue(fetchFn: typeof fetch): Promise<number> {
+  let sent = 0
+  try {
+    for (const entry of pendingUploads()) {
+      const res = await fetchFn(`${apiUrl()}/scores`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(entry),
+      })
+      // Retry later on rate limits and server errors; drop entries the server rejects as invalid.
+      if (res.status === 429 || res.status >= 500) break
+      localStorage.setItem(PENDING_KEY, JSON.stringify(pendingUploads().filter((e) => e.id !== entry.id)))
+      if (res.ok) sent++
+    }
+  } catch {
+    // Offline: keep the queue for next time.
+  }
+  return sent
 }
 
 export async function fetchGlobal(limit = TOP_N, fetchFn: typeof fetch = fetch): Promise<ScoreEntry[]> {

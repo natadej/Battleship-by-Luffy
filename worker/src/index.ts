@@ -7,7 +7,7 @@ interface D1Statement {
   bind(...values: unknown[]): D1Statement
   first<T>(): Promise<T | null>
   all<T>(): Promise<D1Result<T>>
-  run(): Promise<unknown>
+  run(): Promise<{ meta: { changes: number } }>
 }
 interface Env {
   DB: { prepare(sql: string): D1Statement }
@@ -66,18 +66,24 @@ export default {
       const entry = validate(body)
       if (typeof entry === 'string') return json({ error: entry }, 400, headers)
       const ip = await ipHash(req)
-      const recent = await env.DB.prepare(
-        "SELECT COUNT(*) AS n FROM scores WHERE ip_hash = ? AND created_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-1 minute')",
+      // One statement, so concurrent posts can't all pass the rate check before inserting.
+      const { meta } = await env.DB.prepare(
+        `INSERT OR IGNORE INTO scores (id, name, score, accuracy, level, shots, won, assisted, ip_hash)
+         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+         WHERE (SELECT COUNT(*) FROM scores WHERE ip_hash = ? AND created_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-1 minute')) < ?`,
       )
-        .bind(ip)
-        .first<{ n: number }>()
-      if ((recent?.n ?? 0) >= POSTS_PER_MINUTE) return json({ error: 'slow down' }, 429, headers)
-      await env.DB.prepare(
-        'INSERT OR IGNORE INTO scores (id, name, score, accuracy, level, shots, won, assisted, ip_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      )
-        .bind(entry.id, entry.name, entry.score, entry.accuracy, entry.level, entry.shots, entry.won ? 1 : 0, entry.assisted ? 1 : 0, ip)
+        .bind(entry.id, entry.name, entry.score, entry.accuracy, entry.level, entry.shots, entry.won ? 1 : 0, entry.assisted ? 1 : 0, ip, ip, POSTS_PER_MINUTE)
         .run()
-      const rank = await env.DB.prepare('SELECT COUNT(*) + 1 AS rank FROM scores WHERE score > ?').bind(entry.score).first<{ rank: number }>()
+      // Same order as GET: score, then accuracy, then earliest first. A retried id ranks its original row.
+      const rank = await env.DB.prepare(
+        `SELECT COUNT(s.id) + 1 AS rank, MAX(me.id) AS found
+         FROM (SELECT score, accuracy, created_at, id FROM scores WHERE id = ?) me
+         LEFT JOIN scores s ON s.score > me.score
+           OR (s.score = me.score AND (s.accuracy > me.accuracy OR (s.accuracy = me.accuracy AND s.created_at < me.created_at)))`,
+      )
+        .bind(entry.id)
+        .first<{ rank: number; found: string | null }>()
+      if (meta.changes === 0 && !rank?.found) return json({ error: 'slow down' }, 429, headers)
       return json({ ok: true, rank: rank?.rank ?? null }, 201, headers)
     }
 

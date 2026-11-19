@@ -10,8 +10,13 @@ export interface Entry {
 }
 
 /** Best possible campaign: 100% accuracy, a win and a 17-hit combo on every level 1–5. */
-export const MAX_SCORE = 150_000
-export const MAX_SHOTS = 500
+/**
+ * Campaign ceiling with headroom. Per level L the most is 1500·L for a perfect win plus a combo of every hit:
+ * 17 ship squares + 5 more if a healed ship moves = 22 hits → 50·L·(1+…+21) = 11 550·L.
+ * Summed over levels 1–5: 13 050 × 15 = 195 750.
+ */
+export const MAX_SCORE = 250_000
+export const MAX_SHOTS = 1000
 const ID = /^[0-9a-z-]{8,40}$/i
 
 export function cleanName(raw: unknown): string | null {

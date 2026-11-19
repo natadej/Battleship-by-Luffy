@@ -81,4 +81,13 @@ describe('leaderboard', () => {
     expect(pendingUploads()).toEqual([])
     await expect(fetchGlobal()).rejects.toThrow()
   })
+
+  it('still uploads after a flush with an empty queue', async () => {
+    const send = vi.fn(() => Promise.resolve(new Response(null, { status: 201 })))
+    expect(await flushPending(send as typeof fetch)).toBe(0)
+    globalThis.fetch = send as typeof fetch
+    submitScore(entry(100))
+    await vi.waitFor(() => expect(pendingUploads()).toEqual([]))
+    expect(send).toHaveBeenCalledTimes(1)
+  })
 })

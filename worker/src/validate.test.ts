@@ -8,6 +8,10 @@ describe('validate', () => {
     expect(validate(good)).toEqual(good)
   })
 
+  it('accepts the highest possible campaign total', () => {
+    expect(validate({ ...good, score: 195_750 })).toEqual({ ...good, score: 195_750 })
+  })
+
   it('cleans names', () => {
     expect(cleanName('  Captain\n  <b>Luffy</b>  ')).toBe('Captain bLuffy/b')
     expect(cleanName('x'.repeat(40))).toHaveLength(20)
