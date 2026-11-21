@@ -2538,3 +2538,69 @@ h1 {
     font-size: 0.55rem;
   }
 }
+
+/* Full screen, edge to edge: the sea runs to the sides and bottom of the screen (inside the notch and
+   home-bar safe areas), and useFitCell sizes the squares so each screen fits without scrolling. */
+body {
+  min-height: 100dvh;
+}
+
+main.app {
+  --pad-l: max(10px, env(safe-area-inset-left));
+  --pad-r: max(10px, env(safe-area-inset-right));
+  display: flex;
+  flex-direction: column;
+  max-width: none;
+  min-height: 100dvh;
+  margin: 0;
+  padding: max(8px, env(safe-area-inset-top)) var(--pad-r) 0 var(--pad-l);
+}
+
+main.app > .boards {
+  align-content: center;
+  margin: 0 calc(-1 * var(--pad-r)) 0 calc(-1 * var(--pad-l));
+  padding: 0 var(--pad-r) env(safe-area-inset-bottom) var(--pad-l);
+  border-width: 5px 0 0;
+  border-radius: 0;
+  box-shadow: 0 -4px 0 var(--ink);
+}
+
+.app:not(.phase-over) > .boards {
+  flex: 1 0 auto;
+}
+
+.app.phase-over {
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
+}
+
+.app[data-fit] .grid {
+  --cell: var(--fit-cell);
+}
+
+.boards > .extras {
+  grid-column: 1 / -1;
+  margin: 0 0 10px;
+}
+
+.fullscreen-tip {
+  max-width: 340px;
+  margin: 6px auto;
+  padding: 8px 12px;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 3px 0 var(--ink);
+  font-size: 0.85rem;
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .app.phase-placement {
+    grid-template-rows: auto 1fr;
+    align-items: stretch;
+  }
+
+  .app.phase-placement > .boards {
+    margin-right: 0;
+    padding-right: 8px;
+    border-top-right-radius: 24px;
+  }
+}

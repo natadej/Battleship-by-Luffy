@@ -1,5 +1,7 @@
 import { type ReactNode, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { SHOT_MS } from './artillery'
+import { useFitCell } from './fit'
+import { canFullscreen, isFullscreen, isInstalled, onFullscreenChange, requestFullscreen } from './fullscreen'
 import { FleetStatus } from './components/FleetStatus'
 import { Grid } from './components/Grid'
 import { SeaLayer } from './components/SeaLayer'
@@ -210,7 +212,9 @@ export default function App() {
   const [chest, setChest] = useState<ChestPrize | null>(null)
   const recorded = useRef(false)
   const today = dayKey(new Date())
-  const [fullscreen, setFullscreen] = useState(() => typeof document !== 'undefined' && !!document.fullscreenElement)
+  const [fullscreen, setFullscreen] = useState(() => typeof document !== 'undefined' && isFullscreen())
+  const [fullscreenTip, setFullscreenTip] = useState(false)
+  const appRef = useRef<HTMLElement>(null)
 
   const { phase, player, enemy, turn, winner, level } = state
   const selected = FLEET.find((s) => s.id === selectedId) ?? null
@@ -254,11 +258,7 @@ export default function App() {
     return () => clearTimeout(t)
   }, [burst])
 
-  useEffect(() => {
-    const sync = () => setFullscreen(!!document.fullscreenElement)
-    document.addEventListener('fullscreenchange', sync)
-    return () => document.removeEventListener('fullscreenchange', sync)
-  }, [])
+  useEffect(() => onFullscreenChange(() => setFullscreen(isFullscreen())), [])
 
   /** Once per level, at a random round, a healing box drops onto a random board. */
   const maybeDrop = useCallback(() => {
@@ -459,7 +459,7 @@ export default function App() {
     setChest(null)
     recorded.current = false
     dropRound.current = 3 + Math.floor(Math.random() * 10)
-    if (!document.fullscreenElement && matchMedia('(pointer: coarse)').matches) void enterFullscreen()
+    if (!isFullscreen() && matchMedia('(pointer: coarse)').matches) void enterFullscreen()
     setWeapon('missile')
     setHealing(null)
     setNotice(null)
@@ -637,7 +637,7 @@ export default function App() {
 
   async function enterFullscreen() {
     try {
-      await document.documentElement.requestFullscreen?.()
+      await requestFullscreen()
     } catch {
       // Not allowed or not supported (e.g. iPhone Safari).
     }
@@ -645,12 +645,14 @@ export default function App() {
 
   async function goLandscape() {
     try {
-      await document.documentElement.requestFullscreen?.()
+      await requestFullscreen()
       await (screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> }).lock?.('landscape')
     } catch {
       // Not supported (e.g. iOS): the overlay keeps asking the user to turn the phone.
     }
   }
+
+  useFitCell(appRef, `${phase}|${healing ? 1 : 0}`)
 
   const mode = aiMode(state.ai)
   const levelInfo = LEVELS[level - 1]
@@ -680,11 +682,11 @@ export default function App() {
                 : 'Watch out! The enemy is aiming…'
 
   return (
-    <main className={`app phase-${phase} ${progress.ship} ${progress.sea}`}>
+    <main ref={appRef} className={`app phase-${phase} ${progress.ship} ${progress.sea}`}>
       <div className="rotate-overlay" role="alertdialog" aria-label="Rotate your phone">
         <div className="rotate-phone" aria-hidden="true" />
         <p>Turn your phone sideways to play! 🔄</p>
-        {'requestFullscreen' in document.documentElement && (
+        {canFullscreen() && (
           <button type="button" onClick={goLandscape}>
             Play in landscape
           </button>
@@ -696,8 +698,13 @@ export default function App() {
           <span aria-hidden="true">⚓</span> Battleship
         </h1>
         <div className="header-actions">
-          {!fullscreen && 'requestFullscreen' in document.documentElement && (
-            <button type="button" className="chip" onClick={enterFullscreen}>
+          {!fullscreen && !isInstalled() && (
+            <button
+              type="button"
+              className="chip"
+              aria-expanded={canFullscreen() ? undefined : fullscreenTip}
+              onClick={canFullscreen() ? enterFullscreen : () => setFullscreenTip((t) => !t)}
+            >
               ⛶ Full screen
             </button>
           )}
@@ -716,6 +723,11 @@ export default function App() {
             {muted ? 'Sound off' : 'Sound on'}
           </button>
         </div>
+        {fullscreenTip && !canFullscreen() && (
+          <p className="fullscreen-tip" role="note">
+            Tap Share <span aria-hidden="true">⬆️</span>, then <b>Add to Home Screen</b>. Open the game from its icon to play full screen.
+          </p>
+        )}
         <p className={`status ${phase === 'over' ? `status-${winner}` : ''}`} role="status" aria-live="polite">
           {status}
         </p>
@@ -959,20 +971,20 @@ export default function App() {
             </ArsenalBar>
           </aside>
         )}
+        {phase === 'playing' && (
+          <div className="extras">
+            <button
+              type="button"
+              className={`shade-toggle ${shade ? 'on' : ''}`}
+              aria-pressed={shade}
+              title="Orange glow where enemy ships are most likely, from the shots so far. Halves your score."
+              onClick={toggleShade}
+            >
+              🔮 Hint glow {shade ? 'on' : 'off'}
+            </button>
+          </div>
+        )}
       </section>
-      {phase === 'playing' && (
-        <div className="extras">
-          <button
-            type="button"
-            className={`shade-toggle ${shade ? 'on' : ''}`}
-            aria-pressed={shade}
-            title="Orange glow where enemy ships are most likely, from the shots so far. Halves your score."
-            onClick={toggleShade}
-          >
-            🔮 Hint glow {shade ? 'on' : 'off'}
-          </button>
-        </div>
-      )}
 
       {phase !== 'over' && <SeaLayer />}
       {showBoard && <LeaderboardDialog onClose={() => setShowBoard(false)} />}
