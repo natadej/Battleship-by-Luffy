@@ -222,6 +222,8 @@ export default function App() {
   const { phase, player, enemy, turn, winner, level } = state
   const mission = daily ? DAILY_LEVEL : campaign.mission
   const boss = !daily && isBoss(mission)
+  /** Changes after every enemy shot, so the enemy fires again while it keeps hitting. */
+  const aiShots = state.tally.ai.shots
   const selected = FLEET.find((s) => s.id === selectedId) ?? null
   const nextUnplaced = (board: Board) => FLEET.find((s) => !board.ships.some((p) => p.id === s.id))?.id ?? null
 
@@ -333,7 +335,7 @@ export default function App() {
       setAiFiring(null)
     }
     // Reads the latest board through stateRef.
-  }, [phase, turn, launch, hearts, maybeDrop])
+  }, [phase, turn, aiShots, launch, hearts, maybeDrop])
 
   // R rotates the ship being placed.
   useEffect(() => {
@@ -694,8 +696,10 @@ export default function App() {
             : inFlight === 'player'
               ? 'Fire! 🔥'
               : turn === 'player'
-                ? `Your turn! ${WEAPON_ICON[weapon]} Tap the red sea to fire your ${WEAPON_INFO[weapon].name.toLowerCase()}.`
-                : 'Watch out! The enemy is aiming…'
+                ? `${state.again ? '💥 Hit! Fire again!' : 'Your turn!'} ${WEAPON_ICON[weapon]} Tap the red sea to fire your ${WEAPON_INFO[weapon].name.toLowerCase()}.`
+                : state.again
+                  ? 'The enemy hit! It fires again…'
+                  : 'Watch out! The enemy is aiming…'
 
   return (
     <main ref={appRef} className={`app phase-${phase} ${progress.ship} ${progress.sea}`}>

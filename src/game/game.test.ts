@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { FLEET, emptyBoard, placeShip, randomBoard } from './board'
-import { initialState, reducer } from './game'
+import { type GameState, initialState, reducer } from './game'
 import { seeded } from './testUtils'
 
 const destroyer = FLEET.find((s) => s.id === 'destroyer')!
@@ -28,6 +28,21 @@ describe('game reducer', () => {
     s = reducer(s, { type: 'aiFire', coord: { r: 0, c: 0 } })
     expect(s.turn).toBe('player')
     expect(reducer(s, { type: 'playerFire', coord: { r: 0, c: 0 } })).toBe(s)
+  })
+
+  it('lets a side fire again after a hit until it misses', () => {
+    const mine = placeShip(emptyBoard(), destroyer, { r: 0, c: 0 }, 'H')!
+    const enemy = placeShip(emptyBoard(), FLEET[0], { r: 0, c: 0 }, 'H')!
+    let s: GameState = { ...initialState(), player: mine, enemy, phase: 'playing' }
+    s = reducer(s, { type: 'playerFire', coord: { r: 0, c: 0 } })
+    expect([s.turn, s.again]).toEqual(['player', true])
+    s = reducer(s, { type: 'playerFire', coord: { r: 5, c: 5 } })
+    expect([s.turn, s.again]).toEqual(['ai', false])
+
+    s = reducer(s, { type: 'aiFire', coord: { r: 0, c: 0 } })
+    expect([s.turn, s.again, s.round]).toEqual(['ai', true, 0])
+    s = reducer(s, { type: 'aiFire', coord: { r: 9, c: 9 } })
+    expect([s.turn, s.again, s.round]).toEqual(['player', false, 1])
   })
 
   it('declares the player the winner when the enemy fleet is sunk', () => {
