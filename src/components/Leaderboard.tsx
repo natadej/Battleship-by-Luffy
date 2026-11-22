@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useFitZoom } from '../fit'
 import { tierOf } from '../game/fleet'
 import { LEVELS } from '../game/ai'
 import { pct } from '../game/score'
@@ -49,6 +50,8 @@ export function LeaderboardDialog({ onClose }: { onClose: () => void }) {
   const [tab, setTab] = useState<Tab>(hasGlobal() ? 'global' : 'device')
   const [global, setGlobal] = useState<Global>({ status: 'loading' })
   const [waiting, setWaiting] = useState(() => pendingUploads().length)
+  const box = useRef<HTMLDivElement>(null)
+  useFitZoom(box, `${tab}|${global.status}`)
   const mine = loadScores().flatMap((e) => (e.id ? [e.id] : []))
 
   useEffect(() => {
@@ -72,7 +75,7 @@ export function LeaderboardDialog({ onClose }: { onClose: () => void }) {
   }, [onClose])
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" role="dialog" aria-label="Leaderboard" onClick={(e) => e.stopPropagation()}>
+      <div ref={box} className="modal" role="dialog" aria-label="Leaderboard" onClick={(e) => e.stopPropagation()}>
         <h2>
           Leaderboard
           <button type="button" className="icon-btn" aria-label="Close" onClick={onClose}>

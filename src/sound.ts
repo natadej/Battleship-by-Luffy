@@ -283,3 +283,114 @@ export function playTick(last = false) {
   o.start(t)
   o.stop(t + 0.3)
 }
+
+/** Healing: a heartbeat thump, then a rising shimmer of bells, as the hurt ship comes back to life. */
+export function playRevive() {
+  const ac = audio()
+  if (!ac || muted) return
+  const t = ac.currentTime + IMPACT_DELAY_S
+  thump(ac, t, 90, 50, 0.25, 0.5)
+  thump(ac, t + 0.22, 90, 50, 0.25, 0.4)
+  ;[523.25, 659.25, 783.99, 1046.5, 1318.5, 1568].forEach((f, i) => {
+    const at = t + 0.45 + i * 0.09
+    const o = ac.createOscillator()
+    o.type = 'triangle'
+    o.frequency.value = f
+    o.connect(envelope(ac, at, 0.2, i === 5 ? 1.2 : 0.5))
+    o.start(at)
+    o.stop(at + 1.3)
+  })
+  const src = ac.createBufferSource()
+  src.buffer = noiseBuffer(ac)
+  const bp = ac.createBiquadFilter()
+  bp.type = 'bandpass'
+  bp.Q.value = 4
+  bp.frequency.setValueAtTime(600, t + 0.4)
+  bp.frequency.exponentialRampToValueAtTime(6000, t + 1.4)
+  src.connect(bp).connect(envelope(ac, t + 0.4, 0.12, 1.1))
+  src.start(t + 0.4)
+  src.stop(t + 1.6)
+}
+
+/**
+ * Relocating a healed ship: a looping radio-wave warble (a wobbling tone and tuning static).
+ * Returns a function that stops it.
+ */
+export function startWarp(): () => void {
+  const ac = audio()
+  if (!ac || muted) return () => {}
+  const t = ac.currentTime
+  const bus = ac.createGain()
+  bus.gain.setValueAtTime(0.0001, t)
+  bus.gain.exponentialRampToValueAtTime(0.09, t + 0.3)
+  bus.connect(out(ac))
+
+  const tone = ac.createOscillator()
+  tone.type = 'sine'
+  tone.frequency.value = 520
+  const wobble = ac.createOscillator()
+  wobble.frequency.value = 5
+  const wobbleDepth = ac.createGain()
+  wobbleDepth.gain.value = 160
+  wobble.connect(wobbleDepth).connect(tone.frequency)
+  const sweep = ac.createOscillator()
+  sweep.frequency.value = 0.35
+  const sweepDepth = ac.createGain()
+  sweepDepth.gain.value = 260
+  sweep.connect(sweepDepth).connect(tone.frequency)
+  const toneGain = ac.createGain()
+  toneGain.gain.value = 0.5
+  tone.connect(toneGain).connect(bus)
+
+  const hiss = ac.createBufferSource()
+  hiss.buffer = noiseBuffer(ac)
+  hiss.loop = true
+  const tune = ac.createBiquadFilter()
+  tune.type = 'bandpass'
+  tune.Q.value = 6
+  tune.frequency.value = 1500
+  const tuneLfo = ac.createOscillator()
+  tuneLfo.frequency.value = 0.8
+  const tuneDepth = ac.createGain()
+  tuneDepth.gain.value = 900
+  tuneLfo.connect(tuneDepth).connect(tune.frequency)
+  const hissGain = ac.createGain()
+  hissGain.gain.value = 0.6
+  hiss.connect(tune).connect(hissGain).connect(bus)
+
+  const sources = [tone, wobble, sweep, hiss, tuneLfo]
+  for (const s of sources) s.start(t)
+  return () => {
+    const now = ac.currentTime
+    bus.gain.cancelScheduledValues(now)
+    bus.gain.setTargetAtTime(0.0001, now, 0.05)
+    for (const s of sources) s.stop(now + 0.3)
+    setTimeout(() => bus.disconnect(), 400)
+  }
+}
+
+/** The healed ship arrives at its new spot: a falling warp zap and a bright two-note chime. */
+export function playWarpDone() {
+  const ac = audio()
+  if (!ac || muted) return
+  const t = ac.currentTime + IMPACT_DELAY_S
+  const zap = ac.createOscillator()
+  zap.type = 'sawtooth'
+  zap.frequency.setValueAtTime(2400, t)
+  zap.frequency.exponentialRampToValueAtTime(180, t + 0.35)
+  const lp = ac.createBiquadFilter()
+  lp.type = 'lowpass'
+  lp.frequency.value = 3000
+  zap.connect(lp).connect(envelope(ac, t, 0.15, 0.4))
+  zap.start(t)
+  zap.stop(t + 0.45)
+  ;[987.77, 1318.5].forEach((f, i) => {
+    const at = t + 0.3 + i * 0.12
+    const o = ac.createOscillator()
+    o.type = 'square'
+    o.frequency.value = f
+    o.connect(envelope(ac, at, 0.1, 0.5))
+    o.start(at)
+    o.stop(at + 0.6)
+  })
+}

@@ -1,4 +1,5 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
+import { useFitZoom } from '../fit'
 import { LEVELS } from '../game/ai'
 import { isBoss, tierOf } from '../game/fleet'
 import { BADGES, type Progress, SKINS, liveStreak, starRow } from '../game/rewards'
@@ -28,6 +29,8 @@ export function LevelMap({ mission, stars, daily }: { mission: number; stars: Pr
 }
 
 export function RewardsDialog({ progress, today, onBuy, onClose }: { progress: Progress; today: string; onBuy: (id: string) => void; onClose: () => void }) {
+  const box = useRef<HTMLDivElement>(null)
+  useFitZoom(box, progress)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
     window.addEventListener('keydown', onKey)
@@ -57,7 +60,7 @@ export function RewardsDialog({ progress, today, onBuy, onClose }: { progress: P
     })
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal rewards" role="dialog" aria-label="Rewards" onClick={(e) => e.stopPropagation()}>
+      <div ref={box} className="modal rewards" role="dialog" aria-label="Rewards" onClick={(e) => e.stopPropagation()}>
         <h2>
           🎒 Rewards
           <button type="button" className="icon-btn" aria-label="Close" onClick={onClose}>
