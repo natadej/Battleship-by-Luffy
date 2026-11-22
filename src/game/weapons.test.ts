@@ -108,6 +108,7 @@ describe('weapons in the reducer', () => {
     s = { ...reducer(s, { type: 'start', enemy: randomBoard(seeded(2)), level: 3 }), phase: 'playing' }
     s = reducer(s, { type: 'playerFire', coord: { r: 9, c: 9 } })
     s = reducer(s, { type: 'aiFire', coord: { r: 0, c: 0 } })
+    s = reducer(s, { type: 'aiFire', coord: { r: 9, c: 9 } })
     s = { ...s, kits: { ...s.kits, player: true } }
     const ship = s.player.ships[0]
     expect(canHeal(s.player, ship)).toBe(true)

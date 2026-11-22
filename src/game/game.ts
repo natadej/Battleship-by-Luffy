@@ -27,6 +27,8 @@ export interface GameState {
   ai: AIState
   level: Level
   turn: Side
+  /** The side to move hit something with its last shot, so it fires again (the turn passes on a miss). */
+  again: boolean
   winner: Winner | null
   log: string[]
   /** Specials left this level. */
@@ -35,7 +37,7 @@ export interface GameState {
   crates: { player: Coord | null; enemy: Coord | null }
   /** Whether this level's one healing box has dropped yet. */
   dropped: boolean
-  /** Full rounds played this level (one shot each). */
+  /** Full rounds played this level (a round ends when the enemy misses). */
   round: number
   /** Who is holding an unused healing kit. */
   kits: { player: boolean; ai: boolean }
@@ -67,6 +69,7 @@ export const initialState = (): GameState => ({
   ai: createAI(),
   level: 1,
   turn: 'player',
+  again: false,
   winner: null,
   log: [],
   raided: { player: [], enemy: [] },
@@ -147,6 +150,7 @@ export function reducer(state: GameState, action: Action): GameState {
         enemy: action.enemy,
         level: action.level,
         turn: 'player',
+        again: false,
         log: ['Battle stations! Your move.'],
         crates: action.crates ?? { player: null, enemy: null },
         dropped: !!action.crates,
@@ -161,6 +165,7 @@ export function reducer(state: GameState, action: Action): GameState {
       const v = volley(state, 'player', coord, action.weapon ?? 'missile', action.cells ?? [coord])
       if (!v) return state
       const won = allSunk(v.board)
+      const again = v.worst.outcome !== 'miss'
       return {
         ...state,
         enemy: v.board,
@@ -168,7 +173,8 @@ export function reducer(state: GameState, action: Action): GameState {
         crates: v.crates,
         kits: v.kits,
         tally: v.tally,
-        turn: won ? 'player' : 'ai',
+        turn: won || again ? 'player' : 'ai',
+        again: !won && again,
         phase: won ? 'over' : 'playing',
         winner: won ? 'player' : null,
         log: [describe('You', coord, v.worst.outcome, v.worst.ship), ...state.log].slice(0, MAX_LOG),
@@ -180,6 +186,7 @@ export function reducer(state: GameState, action: Action): GameState {
       const v = volley(state, 'ai', coord, action.weapon ?? 'missile', action.cells ?? [coord])
       if (!v) return state
       const won = allSunk(v.board)
+      const again = v.worst.outcome !== 'miss'
       return {
         ...state,
         player: v.board,
@@ -188,8 +195,9 @@ export function reducer(state: GameState, action: Action): GameState {
         crates: v.crates,
         kits: v.kits,
         tally: v.tally,
-        round: state.round + 1,
-        turn: 'player',
+        round: again ? state.round : state.round + 1,
+        turn: again && !won ? 'ai' : 'player',
+        again: !won && again,
         phase: won ? 'over' : 'playing',
         winner: won ? 'ai' : null,
         log: [describe('Enemy', coord, v.worst.outcome, v.worst.ship), ...state.log].slice(0, MAX_LOG),
