@@ -39,11 +39,12 @@ import {
   comboBonus,
   dayKey,
   liveStreak,
-  NEW_RUN,
+  bankRun,
   type Run,
   loadProgress,
   openChest,
   recordBattle,
+  settleRun,
   saveProgress,
   seededRng,
   starRow,
@@ -211,7 +212,9 @@ export default function App() {
   const [banking, setBanking] = useState(false)
   const [combo, setCombo] = useState({ now: 0, best: 0, points: 0 })
   const [comboPop, setComboPop] = useState<{ n: number; key: number } | null>(null)
-  const [reward, setReward] = useState<ReturnType<typeof recordBattle> | null>(null)
+  /** The finished battle's prizes, plus its mission and run frozen for the result screen: the saved run has already moved on. */
+  const [reward, setReward] = useState<(ReturnType<typeof recordBattle> & { ended: { mission: number; totals: Run } | null }) | null>(null)
+  const ended = reward?.ended
   const [chest, setChest] = useState<ChestPrize | null>(null)
   const recorded = useRef(false)
   const today = dayKey(new Date())
@@ -220,7 +223,7 @@ export default function App() {
   const appRef = useRef<HTMLElement>(null)
 
   const { phase, player, enemy, turn, winner, level } = state
-  const mission = daily ? DAILY_LEVEL : campaign.mission
+  const mission = daily ? DAILY_LEVEL : (ended?.mission ?? campaign.mission)
   const boss = !daily && isBoss(mission)
   /** Changes after every enemy shot, so the enemy fires again while it keeps hitting. */
   const aiShots = state.tally.ai.shots
@@ -478,6 +481,25 @@ export default function App() {
     setSubmitted(null)
   }
 
+  const { shots: fired, hits } = state.tally.player
+  const stats = { shots: fired, hits, accuracy: fired ? hits / fired : 0 }
+  const score = computeScore({ accuracy: stats.accuracy, level: mission, won: winner === 'player', assisted, combo: combo.points })
+  const cleared = winner === 'player'
+  /** Missions never end: the points run ends on a loss, or when the player banks it after a win. */
+  const campaignOver = !daily && (!cleared || banking)
+  const liveTotals: Run = useMemo(
+    () => ({
+      mission,
+      total: campaign.total + score,
+      shots: campaign.shots + fired,
+      hits: campaign.hits + hits,
+      assisted: campaign.assisted || assisted,
+    }),
+    [mission, campaign, score, fired, hits, assisted],
+  )
+  const totals = ended?.totals ?? liveTotals
+  const totalAccuracy = totals.shots ? totals.hits / totals.shots : 0
+
   // Stars, coins, badges and the daily streak are paid out once when a battle ends.
   useEffect(() => {
     if (phase !== 'over' || recorded.current) return
@@ -496,9 +518,10 @@ export default function App() {
       },
       today,
     )
-    setProgress(() => result.progress)
-    setReward(result)
-  }, [phase, progress, state.tally, winner, mission, boss, combo.best, player, daily, today, setProgress])
+    const run = daily ? progress.run : settleRun(progress.run, { won: winner === 'player', score, shots, hits, assisted })
+    setProgress(() => ({ ...result.progress, run }))
+    setReward({ ...result, ended: daily ? null : { mission, totals: liveTotals } })
+  }, [phase, progress, state.tally, winner, mission, boss, combo.best, player, daily, today, setProgress, score, assisted, liveTotals])
 
   useEffect(() => {
     if (!comboPop) return
@@ -591,8 +614,8 @@ export default function App() {
       setLastPlayerShot(null)
       return
     }
-    const next = cleared ? mission + 1 : mission
-    setCampaign(cleared && !submitted ? { ...totals, mission: next } : { ...NEW_RUN, mission: next })
+    const next = campaign.mission
+    setReward(null)
     setBanking(false)
     dispatch({ type: 'reset' })
     dispatch({ type: 'setLevel', level: tierOf(next) })
@@ -621,20 +644,6 @@ export default function App() {
     return normalize(probabilityGrid(k.grid, k.remaining))
   }, [shade, phase, enemy])
 
-  const { shots: fired, hits } = state.tally.player
-  const stats = { shots: fired, hits, accuracy: fired ? hits / fired : 0 }
-  const score = computeScore({ accuracy: stats.accuracy, level: mission, won: winner === 'player', assisted, combo: combo.points })
-  const cleared = winner === 'player'
-  /** Missions never end: the points run ends on a loss, or when the player banks it after a win. */
-  const campaignOver = !daily && (!cleared || banking)
-  const totals: Run = {
-    mission,
-    total: campaign.total + score,
-    shots: campaign.shots + stats.shots,
-    hits: campaign.hits + stats.hits,
-    assisted: campaign.assisted || assisted,
-  }
-  const totalAccuracy = totals.shots ? totals.hits / totals.shots : 0
 
   function saveScore() {
     const trimmed = name.trim().slice(0, 20)
@@ -643,6 +652,7 @@ export default function App() {
     setSubmitted(
       submitScore({ name: trimmed, score: totals.total, accuracy: totalAccuracy, level: mission, shots: totals.shots, won: cleared, assisted: totals.assisted }),
     )
+    if (cleared && !daily) setCampaign(bankRun(campaign))
   }
 
   async function enterFullscreen() {

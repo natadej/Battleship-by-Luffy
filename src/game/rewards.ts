@@ -20,6 +20,15 @@ export interface Progress {
 export type Run = { mission: number; total: number; shots: number; hits: number; assisted: boolean }
 export const NEW_RUN: Run = { mission: 1, total: 0, shots: 0, hits: 0, assisted: false }
 
+/** The run saved as soon as a battle ends: a win banks the points and moves on, a loss starts a new run at the same mission. */
+export function settleRun(run: Run, b: { won: boolean; score: number; shots: number; hits: number; assisted: boolean }): Run {
+  if (!b.won) return { ...NEW_RUN, mission: run.mission }
+  return { mission: run.mission + 1, total: run.total + b.score, shots: run.shots + b.shots, hits: run.hits + b.hits, assisted: run.assisted || b.assisted }
+}
+
+/** Saving a won run to the leaderboard ends it; the next mission number stays. */
+export const bankRun = (run: Run): Run => ({ ...NEW_RUN, mission: run.mission })
+
 export const NEW_PROGRESS: Progress = {
   coins: 0,
   stars: {},
