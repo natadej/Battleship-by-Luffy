@@ -2731,8 +2731,12 @@ main.app > .boards {
 /* No screen scrolls like a web page: useFitCell shrinks the squares, then zooms the whole screen if needed,
    and useFitZoom zooms dialogs so all of each one shows at once. */
 html {
-  overflow: hidden;
   overscroll-behavior: none;
+}
+
+/* On body (not html) so it applies to the viewport and the page still measures its true size for fitting. */
+body {
+  overflow: hidden;
 }
 
 main.app {
