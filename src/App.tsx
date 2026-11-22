@@ -1050,7 +1050,7 @@ export default function App() {
             {phase !== 'placement' && <HealthBar value={healthOf(player)} label="Your fleet health" />}
           </h2>
           <div
-            className="grid-wrap"
+            className={`grid-wrap${healShip ? ' relocating' : ''}`}
             onPointerDown={(e) => {
               if (!healShip || !myTurn || e.button !== 0) return
               const cell = cellUnder(e.clientX, e.clientY)

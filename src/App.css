@@ -2739,6 +2739,10 @@ body {
   overflow: hidden;
 }
 
+.grid-wrap.relocating {
+  touch-action: none;
+}
+
 main.app {
   zoom: var(--app-zoom, 1);
   min-height: calc(100dvh / var(--app-zoom, 1));
