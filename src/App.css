@@ -264,8 +264,16 @@ kbd {
   opacity: 0.9;
 }
 
+/* The square just fired at is framed briefly, then the frame fades so it isn't mistaken for a target. */
 .cell.last::after {
   box-shadow: inset 0 0 0 2px #ffd60a;
+  animation: last-fade 0.4s ease-out 1s forwards;
+}
+
+@keyframes last-fade {
+  to {
+    box-shadow: inset 0 0 0 2px transparent;
+  }
 }
 
 .cell.preview-ok::after,
@@ -367,6 +375,21 @@ kbd {
   background: radial-gradient(circle, #fff3b0 0 15%, #ffb02e 35%, #e5484d 65%, rgba(229, 72, 77, 0) 72%);
   box-shadow: 0 0 10px 2px rgba(255, 120, 40, 0.6);
   animation: flicker 0.9s ease-in-out infinite alternate;
+}
+
+/* No aiming frame on squares already fired at, or on touch screens, where it sticks to the square just tapped. */
+.grid-enemy .cell.hit:enabled:hover::after,
+.grid-enemy .cell.miss:enabled:hover::after {
+  box-shadow: none;
+  background: none;
+}
+
+@media (hover: none) {
+  .cell:enabled:hover::after,
+  .grid-enemy .cell:enabled:hover::after {
+    box-shadow: none;
+    background: none;
+  }
 }
 
 .mark-miss::before {
@@ -2635,4 +2658,56 @@ main.app > .boards {
 .island-here.island-boss b::after {
   content: ' 👹';
   font-size: 0.7em;
+}
+
+/* Blitz clock: a number, a shrinking bar and "Hurry!" text, so it never relies on colour. */
+.blitz-clock {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 5.5em;
+  margin-right: 8px;
+  padding: 6px 12px 9px;
+  border-radius: 14px;
+  background: #fff;
+  color: var(--ink);
+  box-shadow: 0 3px 0 var(--ink);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+}
+
+.blitz-bar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 4px;
+  background: var(--ink);
+  transform: scaleX(var(--left, 1));
+  transform-origin: left;
+  transition: transform 1s linear;
+}
+
+.blitz-clock.hurry {
+  background: #ffd8a8;
+  animation: hurry 0.5s ease-in-out infinite alternate;
+}
+
+@keyframes hurry {
+  to {
+    transform: scale(1.08);
+  }
+}
+
+.blitz-btn.on {
+  background: #ffd8a8;
+  color: var(--ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .blitz-clock.hurry {
+    animation: none;
+  }
 }

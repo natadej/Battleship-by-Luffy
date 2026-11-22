@@ -270,3 +270,16 @@ export function playReward() {
 
 /** The shared context, for the background music. */
 export const audioContext = () => audio()
+
+/** A short clock tick for the last seconds of a Blitz shot; `last` is the higher, final beep. */
+export function playTick(last = false) {
+  const ac = audio()
+  if (!ac || muted) return
+  const t = ac.currentTime
+  const o = ac.createOscillator()
+  o.type = 'square'
+  o.frequency.value = last ? 1320 : 880
+  o.connect(envelope(ac, t, 0.12, last ? 0.25 : 0.08))
+  o.start(t)
+  o.stop(t + 0.3)
+}
