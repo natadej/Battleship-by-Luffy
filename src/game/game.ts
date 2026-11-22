@@ -53,7 +53,7 @@ export type Action =
   | { type: 'place'; ship: ShipDef; start: Coord; orientation: Orientation }
   | { type: 'remove'; id: string }
   | { type: 'setPlayerBoard'; board: Board }
-  | { type: 'start'; enemy: Board; level: Level; crates?: GameState['crates']; bonus?: Special | null }
+  | { type: 'start'; enemy: Board; level: Level; crates?: GameState['crates']; bonus?: Special | null; enemyBonus?: Partial<Arsenal> }
   | { type: 'playerFire'; coord: Coord; weapon?: Weapon; cells?: Coord[] }
   | { type: 'aiFire'; coord: Coord; weapon?: Weapon; cells?: Coord[] }
   | { type: 'heal'; side: Side; id: string; cells: Coord[] }
@@ -86,12 +86,13 @@ export const fleetPlaced = (board: Board) => board.ships.length === FLEET.length
 const MAX_LOG = 8
 
 const outcomeText = (coord: Coord, outcome: string, shipName?: string) =>
-  `${coordLabel(coord)} ${outcome === 'sunk' ? `sank the ${shipName}` : outcome}`
+  `${coordLabel(coord)} ${outcome === 'sunk' ? `sank the ${shipName}` : outcome === 'dent' ? 'dented armour' : outcome}`
 
 function describe(who: string, coord: Coord, outcome: string, shipName?: string) {
   const at = coordLabel(coord)
   if (outcome === 'miss') return `${who} fired at ${at}: miss.`
   if (outcome === 'hit') return `${who} fired at ${at}: hit!`
+  if (outcome === 'dent') return `${who} fired at ${at}: dented the armour!`
   return `${who} fired at ${at}: sank the ${shipName}!`
 }
 
@@ -113,7 +114,7 @@ function volley(state: GameState, side: Side, coord: Coord, weapon: Weapon, cell
     fired.push(p)
     if (side === 'ai') ai = recordShot(ai, p, result)
     if (result.outcome !== 'miss') hits++
-    if (result.outcome === 'sunk' || (result.outcome === 'hit' && worst.outcome === 'miss')) worst = { outcome: result.outcome, ship: result.ship?.name }
+    if (result.outcome === 'sunk' || (result.outcome !== 'miss' && worst.outcome === 'miss')) worst = { outcome: result.outcome, ship: result.ship?.name }
   }
   const crateKey = side === 'player' ? 'enemy' : 'player'
   const collected = onCrate(fired, state.crates[crateKey])
@@ -128,6 +129,12 @@ function volley(state: GameState, side: Side, coord: Coord, weapon: Weapon, cell
     tally: { ...state.tally, [side]: { shots: t.shots + fired.length, hits: t.hits + hits } },
   }
 }
+
+const addArsenal = (a: Arsenal, extra: Partial<Arsenal> = {}): Arsenal => ({
+  nuke: a.nuke + (extra.nuke ?? 0),
+  mg: a.mg + (extra.mg ?? 0),
+  b52: a.b52 + (extra.b52 ?? 0),
+})
 
 export function reducer(state: GameState, action: Action): GameState {
   switch (action.type) {
@@ -155,9 +162,10 @@ export function reducer(state: GameState, action: Action): GameState {
         crates: action.crates ?? { player: null, enemy: null },
         dropped: !!action.crates,
         round: 0,
-        arsenal: action.bonus
-          ? { ...state.arsenal, player: { ...state.arsenal.player, [action.bonus]: state.arsenal.player[action.bonus] + 1 } }
-          : state.arsenal,
+        arsenal: {
+          player: action.bonus ? { ...state.arsenal.player, [action.bonus]: state.arsenal.player[action.bonus] + 1 } : state.arsenal.player,
+          ai: addArsenal(state.arsenal.ai, action.enemyBonus),
+        },
       }
     case 'playerFire': {
       const { coord } = action
@@ -222,7 +230,7 @@ export function reducer(state: GameState, action: Action): GameState {
       // The old hits become plain water: the ship has moved away from them.
       const shots = board.shots.map((row) => row.slice())
       for (const p of hurt) shots[p.r][p.c] = 'miss'
-      const healed: Board = { shots, ships: board.ships.map((s) => (s.id === id ? { ...s, cells } : s)) }
+      const healed: Board = { shots, ships: board.ships.map((s) => (s.id === id ? { ...s, cells, dented: [] } : s)) }
       let ai = state.ai
       if (side === 'player') {
         const grid = ai.grid.map((row) => row.slice())

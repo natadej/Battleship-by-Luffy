@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MAX_SCORE, cleanName, validate } from './validate'
+import { cleanName, maxScore, maxShots, validate } from './validate'
 
 const good = { id: '0b6f1c3e-2a4d-4e8f-9a1b-123456789abc', name: 'Luffy', score: 4200, accuracy: 0.55, level: 3, shots: 80, won: false, assisted: false }
 
@@ -20,10 +20,12 @@ describe('validate', () => {
   })
 
   it.each([
-    [{ ...good, score: MAX_SCORE + 1 }, 'bad score'],
+    [{ ...good, score: maxScore(good.level) + 1 }, 'bad score'],
+    [{ ...good, shots: maxShots(good.level) + 1 }, 'bad shots'],
+    [{ ...good, level: 0 }, 'bad level'],
     [{ ...good, score: 1.5 }, 'bad score'],
     [{ ...good, accuracy: 1.2 }, 'bad accuracy'],
-    [{ ...good, level: 6 }, 'bad level'],
+    [{ ...good, level: 10_001 }, 'bad level'],
     [{ ...good, shots: -1 }, 'bad shots'],
     [{ ...good, won: 'yes' }, 'bad flags'],
     [{ ...good, id: 'x; DROP TABLE' }, 'bad id'],

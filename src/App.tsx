@@ -8,7 +8,7 @@ import { SeaLayer } from './components/SeaLayer'
 import { strike } from './strikes'
 import { LeaderboardDialog, LeaderboardTable } from './components/Leaderboard'
 import { LevelMap, RewardsDialog } from './components/Rewards'
-import { type Level, LEVELS, aiMode, chooseShot } from './game/ai'
+import { LEVELS, aiMode, chooseShot } from './game/ai'
 import {
   type Board,
   type Coord,
@@ -25,6 +25,7 @@ import {
   shipAt,
   shipCells,
 } from './game/board'
+import { armFleet, enemyFleetLevels, fleetBonus, isBoss, tierOf } from './game/fleet'
 import { fleetPlaced, initialState, reducer } from './game/game'
 import { knowledgeOf, normalize, probabilityGrid } from './game/probability'
 import { healthOf } from './game/raid'
@@ -38,9 +39,12 @@ import {
   comboBonus,
   dayKey,
   liveStreak,
+  bankRun,
+  type Run,
   loadProgress,
   openChest,
   recordBattle,
+  settleRun,
   saveProgress,
   seededRng,
   starRow,
@@ -59,6 +63,7 @@ import {
   relocation,
 } from './game/weapons'
 import { type ScoreEntry, flushPending, saveName, savedName, submitScore } from './leaderboard'
+import { startMusic, stopMusic } from './music'
 import { isMuted, playExplosion, playReward, playSplash, setMuted, unlockAudio } from './sound'
 import './App.css'
 import type { CSSProperties } from 'react'
@@ -76,7 +81,7 @@ function playShotSound(board: Board, cells: Coord[]) {
     if (board.shots[p.r][p.c] !== null) continue
     const result = fire(board, p)
     board = result.board
-    if (result.outcome === 'sunk' || (result.outcome === 'hit' && worst === 'miss')) worst = result.outcome
+    if (result.outcome === 'sunk' || (result.outcome !== 'miss' && worst === 'miss')) worst = result.outcome === 'dent' ? 'hit' : result.outcome
   }
   if (worst === 'miss') playSplash()
   else playExplosion(worst === 'sunk')
@@ -165,12 +170,9 @@ const CONFETTI = Array.from({ length: 36 }, (_, i) => ({
   spin: (i % 2 ? 1 : -1) * (360 + ((i * 53) % 360)),
 }))
 
-/** Running totals for a campaign: levels 1 to 5 played in order, scores added up. */
-type Campaign = { total: number; shots: number; hits: number; assisted: boolean }
-const NEW_CAMPAIGN: Campaign = { total: 0, shots: 0, hits: 0, assisted: false }
 
 export default function App() {
-  const [state, dispatch] = useReducer(reducer, undefined, initialState)
+  const [state, dispatch] = useReducer(reducer, undefined, () => ({ ...initialState(), level: tierOf(loadProgress().run.mission) }))
   const [selectedId, setSelectedId] = useState<string | null>(FLEET[0].id)
   const [orientation, setOrientation] = useState<Orientation>('H')
   const [hover, setHover] = useState<Coord | null>(null)
@@ -185,7 +187,6 @@ export default function App() {
   const [name, setName] = useState(savedName)
   const [submitted, setSubmitted] = useState<ScoreEntry | null>(null)
   const [queued, setQueued] = useState<Coord | null>(null)
-  const [campaign, setCampaign] = useState<Campaign>(NEW_CAMPAIGN)
   const [weapon, setWeapon] = useState<Weapon>('missile')
   const [aim, setAim] = useState<Coord | null>(null)
   /** Using the healing kit: the ship picked (if any) and the way it will face. */
@@ -205,10 +206,15 @@ export default function App() {
   }, [])
   const [showRewards, setShowRewards] = useState(false)
   const [daily, setDaily] = useState(false)
-  const campaignLevel = useRef<Level>(1)
+  const campaign = progress.run
+  const setCampaign = (run: Run) => setProgress((p) => ({ ...p, run }))
+  /** Saving the score after a win ends the points run (the mission number stays). */
+  const [banking, setBanking] = useState(false)
   const [combo, setCombo] = useState({ now: 0, best: 0, points: 0 })
   const [comboPop, setComboPop] = useState<{ n: number; key: number } | null>(null)
-  const [reward, setReward] = useState<ReturnType<typeof recordBattle> | null>(null)
+  /** The finished battle's prizes, plus its mission and run frozen for the result screen: the saved run has already moved on. */
+  const [reward, setReward] = useState<(ReturnType<typeof recordBattle> & { ended: { mission: number; totals: Run } | null }) | null>(null)
+  const ended = reward?.ended
   const [chest, setChest] = useState<ChestPrize | null>(null)
   const recorded = useRef(false)
   const today = dayKey(new Date())
@@ -217,6 +223,8 @@ export default function App() {
   const appRef = useRef<HTMLElement>(null)
 
   const { phase, player, enemy, turn, winner, level } = state
+  const mission = daily ? DAILY_LEVEL : (ended?.mission ?? campaign.mission)
+  const boss = !daily && isBoss(mission)
   /** Changes after every enemy shot, so the enemy fires again while it keeps hitting. */
   const aiShots = state.tally.ai.shots
   const selected = FLEET.find((s) => s.id === selectedId) ?? null
@@ -448,8 +456,9 @@ export default function App() {
 
   function start() {
     unlockAudio()
-    const enemyBoard = randomBoard(daily ? seededRng(`daily-${today}`) : Math.random)
-    dispatch({ type: 'start', enemy: enemyBoard, level, bonus: progress.bonus })
+    const fleet = enemyFleetLevels(daily ? 1 : mission)
+    const enemyBoard = armFleet(randomBoard(daily ? seededRng(`daily-${today}`) : Math.random), fleet, boss ? 1 : 0)
+    dispatch({ type: 'start', enemy: enemyBoard, level, bonus: progress.bonus, enemyBonus: fleetBonus(fleet) })
     if (progress.bonus) {
       const bonus = WEAPON_INFO[progress.bonus].name
       setProgress((p) => ({ ...p, bonus: null }))
@@ -472,6 +481,25 @@ export default function App() {
     setSubmitted(null)
   }
 
+  const { shots: fired, hits } = state.tally.player
+  const stats = { shots: fired, hits, accuracy: fired ? hits / fired : 0 }
+  const score = computeScore({ accuracy: stats.accuracy, level: mission, won: winner === 'player', assisted, combo: combo.points })
+  const cleared = winner === 'player'
+  /** Missions never end: the points run ends on a loss, or when the player banks it after a win. */
+  const campaignOver = !daily && (!cleared || banking)
+  const liveTotals: Run = useMemo(
+    () => ({
+      mission,
+      total: campaign.total + score,
+      shots: campaign.shots + fired,
+      hits: campaign.hits + hits,
+      assisted: campaign.assisted || assisted,
+    }),
+    [mission, campaign, score, fired, hits, assisted],
+  )
+  const totals = ended?.totals ?? liveTotals
+  const totalAccuracy = totals.shots ? totals.hits / totals.shots : 0
+
   // Stars, coins, badges and the daily streak are paid out once when a battle ends.
   useEffect(() => {
     if (phase !== 'over' || recorded.current) return
@@ -482,16 +510,18 @@ export default function App() {
       {
         won: winner === 'player',
         accuracy: shots ? hits / shots : 0,
-        level,
+        level: mission,
+        boss,
         bestCombo: combo.best,
         shipsLost: player.ships.filter((p) => isSunk(player, p)).length,
         daily,
       },
       today,
     )
-    setProgress(() => result.progress)
-    setReward(result)
-  }, [phase, progress, state.tally, winner, level, combo.best, player, daily, today, setProgress])
+    const run = daily ? progress.run : settleRun(progress.run, { won: winner === 'player', score, shots, hits, assisted })
+    setProgress(() => ({ ...result.progress, run }))
+    setReward({ ...result, ended: daily ? null : { mission, totals: liveTotals } })
+  }, [phase, progress, state.tally, winner, mission, boss, combo.best, player, daily, today, setProgress, score, assisted, liveTotals])
 
   useEffect(() => {
     if (!comboPop) return
@@ -530,7 +560,7 @@ export default function App() {
     setLastPlayerShot(coord)
     const struck = cells.some((p) => shipAt(s.enemy, p) && s.enemy.shots[p.r][p.c] === null)
     const n = struck ? combo.now + 1 : 0
-    setCombo({ now: n, best: Math.max(combo.best, n), points: combo.points + comboBonus(n, level) })
+    setCombo({ now: n, best: Math.max(combo.best, n), points: combo.points + comboBonus(n, mission) })
     if (n >= 2) setComboPop({ n, key: Date.now() })
     if (onCrate(cells, s.crates.enemy)) {
       hearts('enemy', s.crates.enemy!)
@@ -561,8 +591,7 @@ export default function App() {
 
   /** Turns the daily challenge on or off; the campaign level is put back afterwards. */
   function toggleDaily() {
-    if (!daily) campaignLevel.current = level
-    dispatch({ type: 'setLevel', level: daily ? campaignLevel.current : DAILY_LEVEL })
+    dispatch({ type: 'setLevel', level: daily ? tierOf(campaign.mission) : DAILY_LEVEL })
     setDaily(!daily)
   }
 
@@ -578,19 +607,20 @@ export default function App() {
     if (daily) {
       setDaily(false)
       dispatch({ type: 'reset' })
-      dispatch({ type: 'setLevel', level: campaignLevel.current })
+      dispatch({ type: 'setLevel', level: tierOf(campaign.mission) })
       setSelectedId(FLEET[0].id)
       setHealing(null)
       setLastAiShot(null)
       setLastPlayerShot(null)
       return
     }
-    const next = cleared && level < 5
-    setCampaign(next ? totals : NEW_CAMPAIGN)
+    const next = campaign.mission
+    setReward(null)
+    setBanking(false)
     dispatch({ type: 'reset' })
-    dispatch({ type: 'setLevel', level: next ? ((level + 1) as Level) : 1 })
-    if (next) dispatch({ type: 'setPlayerBoard', board: randomBoard() })
-    setSelectedId(next ? null : FLEET[0].id)
+    dispatch({ type: 'setLevel', level: tierOf(next) })
+    if (cleared) dispatch({ type: 'setPlayerBoard', board: randomBoard() })
+    setSelectedId(cleared ? null : FLEET[0].id)
     setHealing(null)
     setLastAiShot(null)
     setLastPlayerShot(null)
@@ -614,27 +644,15 @@ export default function App() {
     return normalize(probabilityGrid(k.grid, k.remaining))
   }, [shade, phase, enemy])
 
-  const { shots: fired, hits } = state.tally.player
-  const stats = { shots: fired, hits, accuracy: fired ? hits / fired : 0 }
-  const score = computeScore({ accuracy: stats.accuracy, level, won: winner === 'player', assisted, combo: combo.points })
-  const cleared = winner === 'player'
-  /** The campaign ends on a loss or after beating level 5; only then does the total go on the leaderboard. */
-  const campaignOver = !daily && (!cleared || level === 5)
-  const totals: Campaign = {
-    total: campaign.total + score,
-    shots: campaign.shots + stats.shots,
-    hits: campaign.hits + stats.hits,
-    assisted: campaign.assisted || assisted,
-  }
-  const totalAccuracy = totals.shots ? totals.hits / totals.shots : 0
 
   function saveScore() {
     const trimmed = name.trim().slice(0, 20)
     if (!trimmed) return
     saveName(trimmed)
     setSubmitted(
-      submitScore({ name: trimmed, score: totals.total, accuracy: totalAccuracy, level, shots: totals.shots, won: cleared && level === 5, assisted: totals.assisted }),
+      submitScore({ name: trimmed, score: totals.total, accuracy: totalAccuracy, level: mission, shots: totals.shots, won: cleared, assisted: totals.assisted }),
     )
+    if (cleared && !daily) setCampaign(bankRun(campaign))
   }
 
   async function enterFullscreen() {
@@ -654,14 +672,22 @@ export default function App() {
     }
   }
 
+  /** Chiptune while a battle runs; bosses get their own faster theme. */
+  useEffect(() => {
+    if (phase === 'playing' && !muted) startMusic(boss ? 'boss' : 'battle')
+    else stopMusic()
+  }, [phase, muted, boss])
+  useEffect(() => stopMusic, [])
+
   useFitCell(appRef, `${phase}|${healing ? 1 : 0}`)
 
   const mode = aiMode(state.ai)
   const levelInfo = LEVELS[level - 1]
+  const nextBoss = isBoss(mission + 1) ? ' 👹 Boss!' : ''
   const status =
     phase === 'placement'
       ? fleetPlaced(player)
-        ? `Ships ready! Level ${level}: beat ${levelInfo.name}!`
+        ? daily ? `Ships ready! Beat ${levelInfo.name}!` : `Ships ready! Mission ${mission}${boss ? ' 👹 Boss' : ''}: beat ${levelInfo.name}!`
         : 'Tap the sea to put your ships, or press 🎲 Randomize. Drag a ship to move it, tap it to turn it.'
       : phase === 'over'
         ? winner === 'player'
@@ -739,7 +765,7 @@ export default function App() {
 
       {phase === 'placement' && (
         <section className="controls" aria-label="Fleet placement">
-          <LevelMap level={daily ? campaignLevel.current : level} stars={progress.stars} daily={daily} />
+          <LevelMap mission={campaign.mission} stars={progress.stars} daily={daily} />
           <div className="actions">
             <button type="button" onClick={randomize}>
               🎲 Randomize
@@ -762,9 +788,11 @@ export default function App() {
             </p>
           ) : (
           <p className="level-hint">
-            Level {level} of 5: {levelInfo.strategy}. Score ×{level}. Win to move up a level; your scores add up and go on the leaderboard when
-            the campaign ends.
-            {campaign.total > 0 && ` Campaign total so far: ${campaign.total}.`}
+            Mission {mission}
+            {boss && ' 👹 BOSS: every enemy ship has an extra 🛡 armoured block, and a win pays double coins'}. {levelInfo.strategy}
+            {mission > 5 && ', and the enemy ships are levelled up'}. Score ×{mission}. Missions never end: win to go on; a loss keeps your mission
+            but ends your points run.
+            {campaign.total > 0 && ` Points so far: ${campaign.total}.`}
           </p>
           )}
           <button type="button" className="primary start-btn" disabled={!fleetPlaced(player)} onClick={start}>
@@ -789,10 +817,8 @@ export default function App() {
                 ? `📅 Daily challenge won! Streak: ${liveStreak(progress.daily, today)} day${liveStreak(progress.daily, today) === 1 ? '' : 's'} 🔥`
                 : "The daily fleet got away. Try again or come back tomorrow!"
               : cleared
-              ? level === 5
-                ? `🏆 Congratulations${name.trim() ? `, ${name.trim()}` : ''}! You beat all 5 levels.`
-                : `Level ${level} cleared! Next up: level ${level + 1}, ${LEVELS[level].name}.`
-              : `The enemy ${levelInfo.name} wins this time. Your campaign ends at level ${level}.`}
+              ? `${boss ? '👹 Boss beaten! ' : ''}Mission ${mission} cleared! Next up: mission ${mission + 1}.${nextBoss}`
+              : `The enemy ${levelInfo.name} wins this time. Try mission ${mission} again!`}
           </h2>
           {reward && (
             <div className="reward-strip">
@@ -829,11 +855,11 @@ export default function App() {
           <div className="result-stats">
             <div>
               <b>{score}</b>
-              <span>Level score</span>
+              <span>Mission score</span>
             </div>
             <div>
               <b>{totals.total}</b>
-              <span>Campaign total</span>
+              <span>Points run</span>
             </div>
             <div>
               <b>{pct(stats.accuracy)}</b>
@@ -842,8 +868,8 @@ export default function App() {
               </span>
             </div>
             <div>
-              <b>{level}</b>
-              <span>{levelInfo.name}</span>
+              <b>{mission}</b>
+              <span>Mission{boss ? ' 👹' : ''}</span>
             </div>
           </div>
           {assisted && <p className="lb-note">Probability shade used: score halved.</p>}
@@ -860,10 +886,14 @@ export default function App() {
                 Save to leaderboard
               </button>
             </form>
+          ) : !daily && cleared && !submitted ? (
+            <button type="button" className="bank-btn" onClick={() => setBanking(true)}>
+              🏁 Save my {totals.total} points to the leaderboard
+            </button>
           ) : null}
           <LeaderboardTable highlight={submitted} />
           <button type="button" className="primary" onClick={playAgain}>
-            {daily ? 'Back to the campaign' : campaignOver ? 'New campaign from level 1' : `Next: level ${level + 1}`}
+            {daily ? 'Back to the missions' : cleared ? `Next: mission ${mission + 1}${nextBoss}` : `Try mission ${mission} again`}
           </button>
         </section>
       )}

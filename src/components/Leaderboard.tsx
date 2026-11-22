@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { tierOf } from '../game/fleet'
 import { LEVELS } from '../game/ai'
 import { pct } from '../game/score'
 import { type ScoreEntry, fetchGlobal, flushPending, hasGlobal, loadScores, pendingUploads } from '../leaderboard'
@@ -11,7 +12,7 @@ export function LeaderboardTable({ highlight, rows = loadScores(), mine = [] }: 
         <tr>
           <th>#</th>
           <th>Name</th>
-          <th>Level</th>
+          <th>Mission</th>
           <th>Accuracy</th>
           <th>Score</th>
         </tr>
@@ -28,8 +29,8 @@ export function LeaderboardTable({ highlight, rows = loadScores(), mine = [] }: 
                 {r.won && <span title="Won the battle"> ★</span>}
                 {r.assisted && <span title="Used the probability shade (score halved)"> ◐</span>}
               </td>
-              <td title={LEVELS[r.level - 1]?.strategy}>
-                {r.level} · {LEVELS[r.level - 1]?.name}
+              <td title={LEVELS[tierOf(r.level) - 1].strategy}>
+                {r.level} · {LEVELS[tierOf(r.level) - 1].name}
               </td>
               <td>{pct(r.accuracy)}</td>
               <td>{r.score}</td>

@@ -9,14 +9,15 @@ export interface Entry {
   assisted: boolean
 }
 
-/** Best possible campaign: 100% accuracy, a win and a 17-hit combo on every level 1–5. */
 /**
- * Campaign ceiling with headroom. Per level L the most is 1500·L for a perfect win plus a combo of every hit:
- * 17 ship squares + 5 more if a healed ship moves = 22 hits → 50·L·(1+…+21) = 11 550·L.
- * Summed over levels 1–5: 13 050 × 15 = 195 750.
+ * Missions never end, so the caps grow with the mission reached (stored as `level`). Per mission M the most is
+ * 1500·M for a perfect win plus a combo of every hit: 17 ship squares + 5 if a healed ship moves + up to 15 armour
+ * dents = 37 hits → 50·M·(1+…+36) = 33 300·M. That's 34 800·M per mission; 40 000 leaves headroom.
  */
-export const MAX_SCORE = 250_000
-export const MAX_SHOTS = 1000
+export const MAX_MISSION = 10_000
+export const maxScore = (mission: number) => (40_000 * mission * (mission + 1)) / 2
+/** At most 100 squares plus 15 armour dents per battle. */
+export const maxShots = (mission: number) => 120 * mission
 const ID = /^[0-9a-z-]{8,40}$/i
 
 export function cleanName(raw: unknown): string | null {
@@ -35,10 +36,10 @@ export function validate(body: unknown): Entry | string {
   if (typeof b.id !== 'string' || !ID.test(b.id)) return 'bad id'
   const name = cleanName(b.name)
   if (!name) return 'bad name'
-  if (!isInt(b.score, 0, MAX_SCORE)) return 'bad score'
   if (typeof b.accuracy !== 'number' || !(b.accuracy >= 0 && b.accuracy <= 1)) return 'bad accuracy'
-  if (!isInt(b.level, 1, 5)) return 'bad level'
-  if (!isInt(b.shots, 0, MAX_SHOTS)) return 'bad shots'
+  if (!isInt(b.level, 1, MAX_MISSION)) return 'bad level'
+  if (!isInt(b.score, 0, maxScore(b.level as number))) return 'bad score'
+  if (!isInt(b.shots, 0, maxShots(b.level as number))) return 'bad shots'
   if (typeof b.won !== 'boolean' || typeof b.assisted !== 'boolean') return 'bad flags'
   return { id: b.id, name, score: b.score, accuracy: b.accuracy, level: b.level, shots: b.shots, won: b.won, assisted: b.assisted }
 }

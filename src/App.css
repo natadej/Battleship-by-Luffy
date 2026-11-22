@@ -2604,3 +2604,35 @@ main.app > .boards {
     border-top-right-radius: 24px;
   }
 }
+
+/* Armour: a shield on armoured blocks; a dented one gets a crack. Shapes, not colours. */
+.mark-armour::before,
+.mark-dent::before {
+  content: '🛡';
+  font-size: calc(var(--cell, 32px) * 0.42);
+  line-height: 1;
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.6));
+}
+.mark-armour {
+  place-items: start end;
+  padding: 2px;
+}
+.mark-dent::before {
+  font-size: calc(var(--cell, 32px) * 0.6);
+}
+.mark-dent::after {
+  content: '';
+  position: absolute;
+  width: 8%;
+  height: 52%;
+  background: #fff;
+  border: 1px solid #111;
+  transform: rotate(28deg);
+}
+.bank-btn {
+  margin: 0.25rem auto;
+}
+.island-here.island-boss b::after {
+  content: ' 👹';
+  font-size: 0.7em;
+}

@@ -61,6 +61,13 @@ export function Grid({
   area,
 }: Props) {
   const visibleShips = board.ships.filter((s) => showShips === 'all' || isSunk(board, s))
+  /** Armoured blocks: your own always show a 🛡; the enemy's show only once dented. */
+  const plates = new Map<string, 'armour' | 'dent'>()
+  for (const s of board.ships)
+    for (const i of s.armour ?? []) {
+      const dent = !!s.dented?.includes(i)
+      if (dent || showShips === 'all') plates.set(`${s.cells[i].r}-${s.cells[i].c}`, dent ? 'dent' : 'armour')
+    }
   return (
     <div
       className={`grid grid-${variant}`}
@@ -95,6 +102,7 @@ export function Grid({
           if (!shot && area?.some((p) => sameCoord(p, coord))) classes.push('aim-area')
           const canClick = interactive && !!onCellClick
           const p = !shot && heat ? heat[r][c] : 0
+          const plate = shot ? undefined : plates.get(`${r}-${c}`)
           return (
             <button
               key={`${r}-${c}`}
@@ -103,13 +111,14 @@ export function Grid({
               className={classes.join(' ')}
               data-cell={`${r}-${c}`}
               disabled={!canClick}
-              aria-label={`${coordLabel(coord)}${shot ? ` ${shot}` : ''}`}
+              aria-label={`${coordLabel(coord)}${shot ? ` ${shot}` : plate === 'dent' ? ' dented armour' : plate ? ' armour' : ''}`}
               onClick={() => onCellClick?.(coord)}
               onMouseEnter={() => onCellHover?.(coord)}
               onFocus={() => onCellHover?.(coord)}
             >
               {p > 0.04 && <span className="heat" style={{ '--p': p.toFixed(2) } as CSSProperties} aria-hidden="true" />}
               {shot && <span className={`mark mark-${shot}`} aria-hidden="true" />}
+              {plate && <span className={`mark mark-${plate}`} aria-hidden="true" />}
               {isLast && shot && <ShotFx hit={shot === 'hit'} />}
             </button>
           )

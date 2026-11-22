@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { NEW_PROGRESS, buySkin, comboBonus, dailyAfterWin, liveStreak, openChest, recordBattle, seededRng, starsFor } from './rewards'
+import { NEW_PROGRESS, NEW_RUN, bankRun, buySkin, comboBonus, dailyAfterWin, liveStreak, openChest, recordBattle, seededRng, settleRun, starsFor } from './rewards'
 
 const win = { won: true, accuracy: 0.5, level: 2 as const, bestCombo: 2, shipsLost: 1, daily: false }
 
@@ -70,5 +70,18 @@ describe('rewards', () => {
     expect(rich.coins).toBe(40)
     expect(rich.ship).toBe('ship-bubblegum')
     expect(buySkin({ ...rich, ship: 'ship-sunny' }, 'ship-bubblegum').ship).toBe('ship-bubblegum')
+  })
+})
+
+describe('points run', () => {
+  const run = { mission: 5, total: 8000, shots: 40, hits: 20, assisted: false }
+  it('a win banks the points and moves to the next mission straight away', () => {
+    expect(settleRun(run, { won: true, score: 4000, shots: 10, hits: 6, assisted: true })).toEqual({ mission: 6, total: 12000, shots: 50, hits: 26, assisted: true })
+  })
+  it('a loss starts a new run at the same mission', () => {
+    expect(settleRun(run, { won: false, score: 500, shots: 30, hits: 5, assisted: false })).toEqual({ ...NEW_RUN, mission: 5 })
+  })
+  it('saving a won run keeps the next mission and clears the points', () => {
+    expect(bankRun({ ...run, mission: 6 })).toEqual({ ...NEW_RUN, mission: 6 })
   })
 })
