@@ -25,6 +25,7 @@ import {
   shipAt,
   shipCells,
 } from './game/board'
+import { BLITZ_SECONDS, loadBlitz, randomTarget, saveBlitz, secondsLeft, speedBonus } from './game/blitz'
 import { armFleet, enemyFleetLevels, fleetBonus, isBoss, tierOf } from './game/fleet'
 import { fleetPlaced, initialState, reducer } from './game/game'
 import { knowledgeOf, normalize, probabilityGrid } from './game/probability'
@@ -64,7 +65,7 @@ import {
 } from './game/weapons'
 import { type ScoreEntry, flushPending, saveName, savedName, submitScore } from './leaderboard'
 import { startMusic, stopMusic } from './music'
-import { isMuted, playExplosion, playReward, playSplash, setMuted, unlockAudio } from './sound'
+import { isMuted, playExplosion, playReward, playSplash, playTick, setMuted, unlockAudio } from './sound'
 import './App.css'
 import type { CSSProperties } from 'react'
 
@@ -189,6 +190,12 @@ export default function App() {
   const [queued, setQueued] = useState<Coord | null>(null)
   const [weapon, setWeapon] = useState<Weapon>('missile')
   const [aim, setAim] = useState<Coord | null>(null)
+  const [blitz, setBlitz] = useState(loadBlitz)
+  /** Seconds left for this Blitz shot, when the shot started, and the speed bonus banked this battle. */
+  const [clock, setClock] = useState(BLITZ_SECONDS)
+  const blitzStart = useRef<number | null>(null)
+  const [speed, setSpeed] = useState(0)
+  const [visible, setVisible] = useState(() => typeof document === 'undefined' || !document.hidden)
   /** Using the healing kit: the ship picked (if any) and the way it will face. */
   const [healing, setHealing] = useState<{ id: string | null; o: Orientation } | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -465,6 +472,7 @@ export default function App() {
       setTimeout(() => setNotice(`🎁 Lucky chest bonus: +1 ${bonus}!`), 0)
     }
     setCombo({ now: 0, best: 0, points: 0 })
+    setSpeed(0)
     setComboPop(null)
     setReward(null)
     setChest(null)
@@ -483,7 +491,7 @@ export default function App() {
 
   const { shots: fired, hits } = state.tally.player
   const stats = { shots: fired, hits, accuracy: fired ? hits / fired : 0 }
-  const score = computeScore({ accuracy: stats.accuracy, level: mission, won: winner === 'player', assisted, combo: combo.points })
+  const score = computeScore({ accuracy: stats.accuracy, level: mission, won: winner === 'player', assisted, combo: combo.points + speed })
   const cleared = winner === 'player'
   /** Missions never end: the points run ends on a loss, or when the player banks it after a win. */
   const campaignOver = !daily && (!cleared || banking)
@@ -549,7 +557,9 @@ export default function App() {
     }
     const w = weapon !== 'missile' && state.arsenal.player[weapon] > 0 ? weapon : 'missile'
     const cells = footprint(w, coord, enemy)
+    const secs = blitzStart.current === null ? 0 : secondsLeft(blitzStart.current, Date.now())
     pending.current.player = coord
+    setAim(null)
     setInFlight('player')
     setWeapon('missile')
     await launch('player', w, coord, cells)
@@ -560,6 +570,7 @@ export default function App() {
     setLastPlayerShot(coord)
     const struck = cells.some((p) => shipAt(s.enemy, p) && s.enemy.shots[p.r][p.c] === null)
     const n = struck ? combo.now + 1 : 0
+    if (struck && secs) setSpeed((p) => p + speedBonus(secs, mission, true))
     setCombo({ now: n, best: Math.max(combo.best, n), points: combo.points + comboBonus(n, mission) })
     if (n >= 2) setComboPop({ n, key: Date.now() })
     if (onCrate(cells, s.crates.enemy)) {
@@ -571,6 +582,49 @@ export default function App() {
   }
 
   const myTurn = phase === 'playing' && turn === 'player' && !inFlight
+
+  useEffect(() => {
+    const onChange = () => setVisible(!document.hidden)
+    document.addEventListener('visibilitychange', onChange)
+    return () => document.removeEventListener('visibilitychange', onChange)
+  }, [])
+
+  // Blitz: the clock restarts for every shot, pauses while healing or when the game is hidden, and on
+  // time-out queues a missile at a random square so the battle never gets stuck.
+  const clockRunning = blitz && myTurn && !healing && !queued && visible
+  useEffect(() => {
+    if (!clockRunning) return
+    const started = Date.now()
+    blitzStart.current = started
+    let shown = -1
+    const tick = () => {
+      const left = secondsLeft(started, Date.now())
+      if (left === shown) return
+      shown = left
+      setClock(left)
+      if (left > 0 && left <= 3) playTick()
+      if (left > 0) return
+      playTick(true)
+      const target = randomTarget(stateRef.current.enemy)
+      if (!target) return
+      setWeapon('missile')
+      setNotice("⏱ Time's up! A missile flew to a random spot.")
+      setQueued(target)
+    }
+    const first = setTimeout(tick, 0)
+    const id = setInterval(tick, 200)
+    return () => {
+      clearTimeout(first)
+      clearInterval(id)
+      blitzStart.current = null
+      setClock(BLITZ_SECONDS)
+    }
+  }, [clockRunning])
+
+  function toggleBlitz() {
+    saveBlitz(!blitz)
+    setBlitz(!blitz)
+  }
 
   function healClick(coord: Coord) {
     if (!healing || !myTurn) return
@@ -780,6 +834,9 @@ export default function App() {
               📅 Daily {liveStreak(progress.daily, today) ? `🔥${liveStreak(progress.daily, today)}` : ''}
               {progress.daily.last === today && ' ✓'}
             </button>
+            <button type="button" className={`blitz-btn ${blitz ? 'on' : ''}`} aria-pressed={blitz} onClick={toggleBlitz}>
+              ⏱ Blitz {blitz ? 'on' : 'off'}
+            </button>
           </div>
           {daily ? (
             <p className="level-hint">
@@ -794,6 +851,12 @@ export default function App() {
             but ends your points run.
             {campaign.total > 0 && ` Points so far: ${campaign.total}.`}
           </p>
+          )}
+          {blitz && (
+            <p className="level-hint">
+              ⏱ Blitz is on: you have {BLITZ_SECONDS} seconds for each shot. Fast hits earn ⚡ bonus points. If time runs out, a missile
+              fires at a random spot.
+            </p>
           )}
           <button type="button" className="primary start-btn" disabled={!fleetPlaced(player)} onClick={start}>
             ⚔️ Start battle!
@@ -872,6 +935,7 @@ export default function App() {
               <span>Mission{boss ? ' 👹' : ''}</span>
             </div>
           </div>
+          {speed > 0 && <p className="lb-note">⏱ Blitz speed bonus: ⚡ {speed} points.</p>}
           {assisted && <p className="lb-note">Probability shade used: score halved.</p>}
           {campaignOver && !submitted ? (
             <form
@@ -1007,6 +1071,17 @@ export default function App() {
         )}
         {phase === 'playing' && (
           <div className="extras">
+            {blitz && (
+              <span
+                className={`blitz-clock ${clockRunning && clock <= 3 ? 'hurry' : ''}`}
+                role="timer"
+                aria-label={clockRunning ? `${clock} seconds left` : 'Blitz clock waiting'}
+              >
+                ⏱ {clockRunning ? clock : '–'}
+                {clockRunning && clock <= 3 && ' Hurry!'}
+                <span className="blitz-bar" style={{ '--left': clockRunning ? clock / BLITZ_SECONDS : 1 } as CSSProperties} aria-hidden="true" />
+              </span>
+            )}
             <button
               type="button"
               className={`shade-toggle ${shade ? 'on' : ''}`}
