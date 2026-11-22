@@ -194,6 +194,7 @@ export default function App() {
   /** Seconds left for this Blitz shot, when the shot started, and the speed bonus banked this battle. */
   const [clock, setClock] = useState(BLITZ_SECONDS)
   const blitzStart = useRef<number | null>(null)
+  const timedOut = useRef(false)
   const [speed, setSpeed] = useState(0)
   const [visible, setVisible] = useState(() => typeof document === 'undefined' || !document.hidden)
   /** Using the healing kit: the ship picked (if any) and the way it will face. */
@@ -485,6 +486,7 @@ export default function App() {
     setLastAiShot(null)
     setLastPlayerShot(null)
     setQueued(null)
+    timedOut.current = false
     setAssisted(shade)
     setSubmitted(null)
   }
@@ -537,17 +539,19 @@ export default function App() {
     return () => clearTimeout(t)
   }, [comboPop])
 
-  // A square tapped while waiting fires as soon as the turn comes back.
+  // A square tapped while waiting fires as soon as the turn comes back, with the whole Blitz clock left.
   useEffect(() => {
     if (!queued || phase !== 'playing' || turn !== 'player' || inFlight) return
     const t = setTimeout(() => {
+      const early = !timedOut.current
+      timedOut.current = false
       setQueued(null)
-      void fireAt(queued)
+      void fireAt(queued, early)
     }, 0)
     return () => clearTimeout(t)
   })
 
-  async function fireAt(coord: Coord) {
+  async function fireAt(coord: Coord, early = false) {
     if (phase !== 'playing' || healing || enemy.shots[coord.r][coord.c]) return
     unlockAudio()
     const busy = turn !== 'player' || inFlight || pending.current.player
@@ -557,7 +561,7 @@ export default function App() {
     }
     const w = weapon !== 'missile' && state.arsenal.player[weapon] > 0 ? weapon : 'missile'
     const cells = footprint(w, coord, enemy)
-    const secs = blitzStart.current === null ? 0 : secondsLeft(blitzStart.current, Date.now())
+    const secs = !blitz ? 0 : early ? BLITZ_SECONDS : blitzStart.current === null ? 0 : secondsLeft(blitzStart.current, Date.now())
     pending.current.player = coord
     setAim(null)
     setInFlight('player')
@@ -609,6 +613,7 @@ export default function App() {
       if (!target) return
       setWeapon('missile')
       setNotice("⏱ Time's up! A missile flew to a random spot.")
+      timedOut.current = true
       setQueued(target)
     }
     const first = setTimeout(tick, 0)
