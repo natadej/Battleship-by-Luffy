@@ -1,4 +1,3 @@
-import type { Level } from './ai'
 import { type Board, type Coord, sameCoord } from './board'
 
 export interface ShotStats {
@@ -27,7 +26,7 @@ export const WIN_BONUS = 500
  * Score = (accuracy × 1000 + win bonus) × level, halved when the probability shade was used.
  * Accuracy dominates, so the leaderboard rewards whoever wastes the fewest shots.
  */
-export function computeScore(o: { accuracy: number; level: Level; won: boolean; assisted: boolean; combo?: number }): number {
+export function computeScore(o: { accuracy: number; level: number; won: boolean; assisted: boolean; combo?: number }): number {
   const base = (o.accuracy * 1000 + (o.won ? WIN_BONUS : 0)) * o.level + (o.combo ?? 0)
   return Math.round(base * (o.assisted ? 0.5 : 1))
 }

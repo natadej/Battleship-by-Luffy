@@ -1,21 +1,24 @@
 import { useEffect } from 'react'
-import { LEVELS, type Level } from '../game/ai'
+import { LEVELS } from '../game/ai'
+import { isBoss, tierOf } from '../game/fleet'
 import { BADGES, type Progress, SKINS, liveStreak, starRow } from '../game/rewards'
 
-/** A path of islands from level 1 to 5: past levels show their best stars, the current one bobs. */
-export function LevelMap({ level, stars, daily }: { level: Level; stars: Progress['stars']; daily: boolean }) {
+/** A window of islands around the current mission (missions never end): past ones show their best stars, bosses a 👹. */
+export function LevelMap({ mission, stars, daily }: { mission: number; stars: Progress['stars']; daily: boolean }) {
+  const first = Math.max(1, mission - 2)
   return (
-    <ol className={`level-map ${daily ? 'dimmed' : ''}`} aria-label="Level map">
-      {LEVELS.map((l) => {
-        const state = l.level < level ? 'done' : l.level === level ? 'here' : 'locked'
+    <ol className={`level-map ${daily ? 'dimmed' : ''}`} aria-label="Mission map">
+      {Array.from({ length: 5 }, (_, k) => first + k).map((m) => {
+        const state = m < mission ? 'done' : m === mission ? 'here' : 'locked'
+        const boss = isBoss(m)
         return (
-          <li key={l.level} className={`island island-${state}`} title={`Level ${l.level}: ${l.name}`}>
+          <li key={m} className={`island island-${state}${boss ? ' island-boss' : ''}`} title={`Mission ${m}${boss ? ' (boss)' : ''}: ${LEVELS[tierOf(m) - 1].name}`}>
             <span className="island-icon" aria-hidden="true">
-              {state === 'locked' ? '🔒' : state === 'here' ? '⛵' : '🏝️'}
+              {state === 'here' ? '⛵' : boss ? '👹' : state === 'locked' ? '🔒' : '🏝️'}
             </span>
-            <b>{l.level}</b>
-            <span className="island-stars" aria-label={`${stars[l.level] ?? 0} of 3 stars`}>
-              {starRow(stars[l.level] ?? 0)}
+            <b>{m}</b>
+            <span className="island-stars" aria-label={`${stars[m] ?? 0} of 3 stars`}>
+              {starRow(stars[m] ?? 0)}
             </span>
           </li>
         )
@@ -30,7 +33,7 @@ export function RewardsDialog({ progress, today, onBuy, onClose }: { progress: P
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
-  const totalStars = Object.values(progress.stars).reduce((a, b) => a + (b ?? 0), 0)
+  const totalStars = Object.values(progress.stars).reduce<number>((a, b) => a + (b ?? 0), 0)
   const skins = (kind: 'ship' | 'sea') =>
     SKINS.filter((s) => s.kind === kind).map((s) => {
       const owned = progress.owned.includes(s.id)
@@ -63,7 +66,7 @@ export function RewardsDialog({ progress, today, onBuy, onClose }: { progress: P
         </h2>
         <p className="reward-totals">
           <span>🪙 {progress.coins} coins</span>
-          <span>⭐ {totalStars} / 15 stars</span>
+          <span>⭐ {totalStars} stars</span>
           <span>📅 {liveStreak(progress.daily, today)} day streak (best {progress.daily.best})</span>
         </p>
         <h3>Badges</h3>

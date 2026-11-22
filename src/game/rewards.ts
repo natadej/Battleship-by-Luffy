@@ -5,7 +5,7 @@ import type { Special } from './weapons'
 export interface Progress {
   coins: number
   /** Best stars (1-3) per campaign level. */
-  stars: Partial<Record<Level, number>>
+  stars: Partial<Record<number, number>>
   badges: string[]
   owned: string[]
   ship: string
@@ -13,7 +13,12 @@ export interface Progress {
   daily: { last: string | null; streak: number; best: number }
   /** An extra special won from a lucky chest, added to the next battle. */
   bonus: Special | null
+  /** The endless campaign: the mission to play next and the points banked so far. */
+  run: Run
 }
+
+export type Run = { mission: number; total: number; shots: number; hits: number; assisted: boolean }
+export const NEW_RUN: Run = { mission: 1, total: 0, shots: 0, hits: 0, assisted: false }
 
 export const NEW_PROGRESS: Progress = {
   coins: 0,
@@ -24,6 +29,7 @@ export const NEW_PROGRESS: Progress = {
   sea: 'sea-tropical',
   daily: { last: null, streak: 0, best: 0 },
   bonus: null,
+  run: NEW_RUN,
 }
 
 export interface Skin {
@@ -59,7 +65,7 @@ export const BADGES: Badge[] = [
   { id: 'untouchable', name: 'Untouchable', icon: '🛡️', desc: 'Win without losing a ship' },
   { id: 'combo-4', name: 'Combo king', icon: '🔥', desc: 'Hit 4 times in a row' },
   { id: 'healer', name: 'Ship doctor', icon: '💖', desc: 'Fix a ship with a healing kit' },
-  { id: 'admiral', name: 'Admiral', icon: '👑', desc: 'Beat all 5 levels' },
+  { id: 'admiral', name: 'Admiral', icon: '👑', desc: 'Beat mission 5, the first boss' },
   { id: 'daily-3', name: 'Daily sailor', icon: '📅', desc: 'Win the daily challenge 3 days in a row' },
   { id: 'collector', name: 'Collector', icon: '🎨', desc: 'Own 4 skins' },
 ]
@@ -73,9 +79,9 @@ export function starsFor(won: boolean, accuracy: number): number {
 }
 
 /** Bonus points for a volley that extends a hit streak: 50 per step past the first, times the level. */
-export const comboBonus = (combo: number, level: Level) => (combo >= 2 ? 50 * (combo - 1) * level : 0)
+export const comboBonus = (combo: number, level: number) => (combo >= 2 ? 50 * (combo - 1) * level : 0)
 
-export const coinsFor = (stars: number, level: Level) => (stars ? stars * 10 + level * 5 : 2)
+export const coinsFor = (stars: number, level: number) => (stars ? stars * 10 + level * 5 : 2)
 
 export const DAILY_COINS = 50
 export const DAILY_LEVEL: Level = 3
@@ -124,7 +130,9 @@ export function seededRng(seed: string): () => number {
 export interface BattleResult {
   won: boolean
   accuracy: number
-  level: Level
+  /** The mission number (or the daily level). */
+  level: number
+  boss?: boolean
   bestCombo: number
   shipsLost: number
   daily: boolean
@@ -138,7 +146,7 @@ export function earnedBadges(p: Progress, r: BattleResult): string[] {
   add('sharpshooter', r.won && r.accuracy >= 0.6)
   add('untouchable', r.won && r.shipsLost === 0)
   add('combo-4', r.bestCombo >= 4)
-  add('admiral', r.won && !r.daily && r.level === 5)
+  add('admiral', r.won && !r.daily && r.level >= 5)
   add('daily-3', p.daily.streak >= 3)
   add('collector', p.owned.length >= 4)
   return got
@@ -148,7 +156,7 @@ export function earnedBadges(p: Progress, r: BattleResult): string[] {
 export function recordBattle(p: Progress, r: BattleResult, today: string): { progress: Progress; stars: number; coins: number; badges: string[] } {
   const stars = starsFor(r.won, r.accuracy)
   const firstDaily = r.daily && r.won && p.daily.last !== today
-  const coins = r.daily ? (firstDaily ? DAILY_COINS : 0) : coinsFor(stars, r.level)
+  const coins = r.daily ? (firstDaily ? DAILY_COINS : 0) : coinsFor(stars, r.level) * (r.boss && r.won ? 2 : 1)
   let next: Progress = { ...p, coins: p.coins + coins }
   if (!r.daily && stars > (p.stars[r.level] ?? 0)) next.stars = { ...p.stars, [r.level]: stars }
   if (r.daily && r.won) next.daily = dailyAfterWin(p.daily, today)
@@ -173,7 +181,7 @@ const KEY = 'battleship-progress'
 export function loadProgress(): Progress {
   try {
     const saved = JSON.parse(localStorage.getItem(KEY) ?? 'null') as Partial<Progress> | null
-    return saved ? { ...NEW_PROGRESS, ...saved, daily: { ...NEW_PROGRESS.daily, ...saved.daily } } : NEW_PROGRESS
+    return saved ? { ...NEW_PROGRESS, ...saved, daily: { ...NEW_PROGRESS.daily, ...saved.daily }, run: { ...NEW_RUN, ...saved.run } } : NEW_PROGRESS
   } catch {
     return NEW_PROGRESS
   }

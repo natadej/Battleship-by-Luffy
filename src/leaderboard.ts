@@ -1,4 +1,3 @@
-import type { Level } from './game/ai'
 
 /**
  * Scores are kept in this browser's localStorage (works offline) and uploaded to the
@@ -10,7 +9,8 @@ export interface ScoreEntry {
   name: string
   score: number
   accuracy: number
-  level: Level
+  /** Highest mission reached. */
+  level: number
   shots: number
   won: boolean
   assisted: boolean

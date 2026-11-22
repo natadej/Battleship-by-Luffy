@@ -12,6 +12,9 @@ export interface ShipDef {
 
 export interface Ship extends ShipDef {
   cells: Coord[]
+  /** Indexes into `cells` of armoured blocks: each takes a dent first, then a hit. */
+  armour?: number[]
+  dented?: number[]
 }
 
 export interface Board {
@@ -19,7 +22,7 @@ export interface Board {
   shots: ShotMark[][]
 }
 
-export type FireOutcome = 'miss' | 'hit' | 'sunk'
+export type FireOutcome = 'miss' | 'hit' | 'sunk' | 'dent'
 
 export interface FireResult {
   board: Board
@@ -114,6 +117,11 @@ export function fire(board: Board, coord: Coord): FireResult {
     throw new Error(`Already fired at ${coordLabel(coord)}`)
   }
   const ship = shipAt(board, coord)
+  const i = ship ? ship.cells.findIndex((p) => sameCoord(p, coord)) : -1
+  if (ship?.armour?.includes(i) && !ship.dented?.includes(i)) {
+    const dented = { ...ship, dented: [...(ship.dented ?? []), i] }
+    return { board: { ...board, ships: board.ships.map((s) => (s.id === ship.id ? dented : s)) }, outcome: 'dent', ship: dented }
+  }
   const shots = board.shots.map((row) => row.slice())
   shots[coord.r][coord.c] = ship ? 'hit' : 'miss'
   const next = { ...board, shots }

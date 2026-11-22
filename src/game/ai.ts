@@ -7,6 +7,8 @@ export interface AIState {
   grid: Knowledge[][]
   /** Lengths of player ships not yet sunk (sinkings are announced). */
   remaining: number[]
+  /** An armoured block it dented, to finish with its next shot. */
+  dent?: Coord | null
 }
 
 export type Level = 1 | 2 | 3 | 4 | 5
@@ -107,6 +109,7 @@ const unknownCells = (s: AIState) => cellsWhere(s, (k) => k === 'unknown')
 
 /** Picks the AI's next shot. Level 4 (the default) is classic Hunt & Target with parity. */
 export function chooseShot(s: AIState, rng: () => number = Math.random, level: Level = 4): Coord {
+  if (s.dent && s.grid[s.dent.r][s.dent.c] === 'unknown') return s.dent
   const strategies: Record<Level, () => Coord[]> = {
     1: () => unknownCells(s),
     2: () => or(neighbourCandidates(s), () => unknownCells(s)),
@@ -122,6 +125,8 @@ export function chooseShot(s: AIState, rng: () => number = Math.random, level: L
 const or = (first: Coord[], fallback: () => Coord[]) => (first.length ? first : fallback())
 
 export function recordShot(s: AIState, coord: Coord, result: FireResult): AIState {
+  if (result.outcome === 'dent') return { ...s, dent: coord }
+  const dent = s.dent && s.dent.r === coord.r && s.dent.c === coord.c ? null : s.dent
   const grid = s.grid.map((row) => row.slice())
   grid[coord.r][coord.c] = result.outcome === 'miss' ? 'miss' : 'hit'
   // A sinking is announced, so the AI can retire that ship's hits and stop targeting around them.
@@ -131,7 +136,7 @@ export function recordShot(s: AIState, coord: Coord, result: FireResult): AIStat
     const i = remaining.indexOf(result.ship.length)
     remaining = remaining.filter((_, j) => j !== i)
   }
-  return { grid, remaining }
+  return { grid, remaining, dent }
 }
 
 function dedupe(cells: Coord[]): Coord[] {

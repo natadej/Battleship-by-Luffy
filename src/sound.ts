@@ -267,3 +267,6 @@ export function playReward() {
     }
   })
 }
+
+/** The shared context, for the background music. */
+export const audioContext = () => audio()
