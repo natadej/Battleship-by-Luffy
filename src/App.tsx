@@ -742,7 +742,8 @@ export default function App() {
   function endTour() {
     if (tour) markSeen(tour)
     setTour(null)
-    if (tour === 'battle') say(pick(boss ? RADIO.boss : RADIO.start), true)
+    // After the guide's own unmount cleanup has hushed its narration.
+    if (tour === 'battle') setTimeout(() => say(pick(boss ? RADIO.boss : RADIO.start), true), 300)
   }
 
   function toggleBlitz() {
