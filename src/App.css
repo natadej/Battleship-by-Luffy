@@ -2711,3 +2711,57 @@ main.app > .boards {
     animation: none;
   }
 }
+
+/* ✅ Relocate done: a green tick plus text, so it's clear without colour. */
+.kit-actions .relocate-done:not(:disabled) {
+  background: #b7f0c0;
+  animation: heartbeat 1.1s ease-in-out infinite;
+}
+
+.kit-actions .relocate-done:disabled {
+  opacity: 0.5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kit-actions .relocate-done:not(:disabled) {
+    animation: none;
+  }
+}
+
+/* No screen scrolls like a web page: useFitCell shrinks the squares, then zooms the whole screen if needed,
+   and useFitZoom zooms dialogs so all of each one shows at once. */
+html {
+  overscroll-behavior: none;
+}
+
+/* On body (not html) so it applies to the viewport and the page still measures its true size for fitting. */
+body {
+  overflow: hidden;
+}
+
+.grid-wrap.relocating {
+  touch-action: none;
+}
+
+main.app {
+  zoom: var(--app-zoom, 1);
+  min-height: calc(100dvh / var(--app-zoom, 1));
+}
+
+.modal-backdrop {
+  padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom))
+    max(12px, env(safe-area-inset-left));
+}
+
+.modal,
+.modal.rewards {
+  max-height: none;
+  overflow: visible;
+  zoom: var(--dialog-zoom, 1);
+}
+
+@media (orientation: landscape) {
+  .modal.rewards {
+    width: min(920px, 100%);
+  }
+}

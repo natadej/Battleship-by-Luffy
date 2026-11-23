@@ -16,7 +16,7 @@ export function largestFitting(lo: number, hi: number, fits: (n: number) => bool
 
 /**
  * Sizes the board squares (`--fit-cell` on the app) to the biggest that fills the screen without scrolling.
- * After a battle only the boards need to fit, since the score form above them scrolls.
+ * If the smallest squares still don't fit (a short phone on the result screen), the whole screen is zoomed down.
  */
 export function useFitCell(ref: RefObject<HTMLElement | null>, key: string) {
   useLayoutEffect(() => {
@@ -28,14 +28,15 @@ export function useFitCell(ref: RefObject<HTMLElement | null>, key: string) {
     const fits = (cell: number) => {
       app.style.setProperty('--fit-cell', `${cell}px`)
       const vh = window.innerHeight
-      if (root.scrollWidth > root.clientWidth) return false
-      if (app.classList.contains('phase-over')) return (app.querySelector('.boards')?.getBoundingClientRect().height ?? 0) <= vh
-      return root.scrollHeight <= vh
+      return root.scrollWidth <= root.clientWidth && root.scrollHeight <= vh
     }
     const fit = () => {
       frame = 0
       app.dataset.fit = ''
-      fits(largestFitting(MIN_CELL, MAX_CELL, fits))
+      app.style.removeProperty('--app-zoom')
+      if (fits(largestFitting(MIN_CELL, MAX_CELL, fits))) return
+      const zoom = Math.min(window.innerHeight / root.scrollHeight, root.clientWidth / root.scrollWidth)
+      app.style.setProperty('--app-zoom', String(Math.floor(zoom * 100) / 100))
     }
     const schedule = () => {
       if (!frame) frame = requestAnimationFrame(fit)
@@ -51,6 +52,34 @@ export function useFitCell(ref: RefObject<HTMLElement | null>, key: string) {
       window.removeEventListener('resize', schedule)
       window.visualViewport?.removeEventListener('resize', schedule)
       observer.disconnect()
+    }
+  }, [ref, key])
+}
+
+/** Zooms a dialog down so all of it fits on the screen, instead of scrolling inside it. */
+export function useFitZoom(ref: RefObject<HTMLElement | null>, key?: unknown) {
+  useLayoutEffect(() => {
+    const box = ref.current
+    if (!box) return
+    let frame = 0
+    const fit = () => {
+      frame = 0
+      box.style.removeProperty('--dialog-zoom')
+      const pad = box.parentElement ? parseFloat(getComputedStyle(box.parentElement).paddingTop) * 2 : 0
+      const room = window.innerHeight - pad
+      const need = box.getBoundingClientRect().height
+      if (need > room) box.style.setProperty('--dialog-zoom', String(Math.floor((room / need) * 100) / 100))
+    }
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(fit)
+    }
+    fit()
+    window.addEventListener('resize', schedule)
+    window.visualViewport?.addEventListener('resize', schedule)
+    return () => {
+      cancelAnimationFrame(frame)
+      window.removeEventListener('resize', schedule)
+      window.visualViewport?.removeEventListener('resize', schedule)
     }
   }, [ref, key])
 }

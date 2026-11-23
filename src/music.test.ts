@@ -15,4 +15,12 @@ describe('music', () => {
         for (const t of line.trim().split(/\s+/)) expect(t === '-' || t === '~' || noteFreq(t) !== null).toBe(true)
     expect(parseLine('C5 ~ ~ - D5')[0]).toMatchObject({ steps: 3 })
   })
+
+  it('keeps every part in whole bars of 16 steps, so the march stays in time when it loops', () => {
+    for (const song of Object.values(SONGS)) {
+      for (const line of [song.lead, song.bass]) expect(line.trim().split(/\s+/).length % 16).toBe(0)
+      expect(song.drums.length % 16).toBe(0)
+      expect(song.drums).toMatch(/^[ksrth-]+$/)
+    }
+  })
 })

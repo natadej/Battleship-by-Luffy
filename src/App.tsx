@@ -65,7 +65,7 @@ import {
 } from './game/weapons'
 import { type ScoreEntry, flushPending, saveName, savedName, submitScore } from './leaderboard'
 import { startMusic, stopMusic } from './music'
-import { isMuted, playExplosion, playReward, playSplash, playTick, setMuted, unlockAudio } from './sound'
+import { isMuted, playExplosion, playReward, playRevive, playSplash, playTick, playWarpDone, setMuted, startWarp, unlockAudio } from './sound'
 import './App.css'
 import type { CSSProperties } from 'react'
 
@@ -197,8 +197,9 @@ export default function App() {
   const timedOut = useRef(false)
   const [speed, setSpeed] = useState(0)
   const [visible, setVisible] = useState(() => typeof document === 'undefined' || !document.hidden)
-  /** Using the healing kit: the ship picked (if any) and the way it will face. */
-  const [healing, setHealing] = useState<{ id: string | null; o: Orientation } | null>(null)
+  /** Using the healing kit: the ship picked (if any), the way it will face, and the spot chosen for it. */
+  const [healing, setHealing] = useState<{ id: string | null; o: Orientation; at?: Coord | null } | null>(null)
+  const [healDrag, setHealDrag] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   /** Hearts bubbling up from a healing box that just dropped or was picked up. */
   const [burst, setBurst] = useState<{ board: 'player' | 'enemy'; at: Coord; key: number } | null>(null)
@@ -431,9 +432,11 @@ export default function App() {
   }
 
   const healShip = healing?.id ? player.ships.find((p) => p.id === healing.id) : undefined
+  const healAt = healing?.at ?? hover
+  const healCells = healing && healShip && healing.at ? relocation(player, healShip, healing.at, healing.o) : null
   const preview =
-    healing && healShip && hover
-      ? { cells: shipCells(hover, healShip.length, healing.o), valid: !!relocation(player, healShip, hover, healing.o) }
+    healing && healShip && healAt
+      ? { cells: shipCells(healAt, healShip.length, healing.o), valid: !!relocation(player, healShip, healAt, healing.o) }
       : phase === 'placement' && selected && hover
       ? (() => {
           const cells = shipCells(hover, selected.length, orientation)
@@ -631,20 +634,28 @@ export default function App() {
     setBlitz(!blitz)
   }
 
+  /** Tapping ❤️ on a hurt ship revives it; tapping (or dragging to) a free spot picks where it warps to. */
   function healClick(coord: Coord) {
     if (!healing || !myTurn) return
     const ship = shipAt(player, coord)
     if (!healing.id || (ship && ship.id !== healing.id && canHeal(player, ship))) {
-      if (ship && canHeal(player, ship)) setHealing({ id: ship.id, o: ship.cells.length > 1 && ship.cells[1].r !== ship.cells[0].r ? 'V' : 'H' })
+      if (ship && canHeal(player, ship)) {
+        playRevive()
+        setHealing({ id: ship.id, o: ship.cells.length > 1 && ship.cells[1].r !== ship.cells[0].r ? 'V' : 'H', at: null })
+      }
       return
     }
-    const picked = player.ships.find((p) => p.id === healing.id)
-    const cells = picked && relocation(player, picked, coord, healing.o)
-    if (!picked || !cells) return
-    dispatch({ type: 'heal', side: 'player', id: picked.id, cells })
+    setHealing({ ...healing, at: coord })
+  }
+
+  /** ✅ Relocate done: the healed ship lands on the chosen spot. */
+  function finishRelocate() {
+    if (!healing || !healShip || !healCells || !myTurn) return
+    dispatch({ type: 'heal', side: 'player', id: healShip.id, cells: healCells })
+    playWarpDone()
     setHealing(null)
     setHover(null)
-    setNotice(`Your ${picked.name} is repaired and has moved.`)
+    setNotice(`Your ${healShip.name} is repaired and has moved.`)
     setProgress((p) => (p.badges.includes('healer') ? p : { ...p, badges: [...p.badges, 'healer'] }))
   }
 
@@ -738,6 +749,27 @@ export default function App() {
   }, [phase, muted, boss])
   useEffect(() => stopMusic, [])
 
+  const warping = !!healing?.id && phase === 'playing' && !muted
+  useEffect(() => (warping ? startWarp() : undefined), [warping])
+
+  // Dragging the healed ship across your sea moves its new spot along with the finger or mouse.
+  useEffect(() => {
+    if (!healDrag) return
+    const move = (e: PointerEvent) => {
+      const cell = cellUnder(e.clientX, e.clientY)
+      if (cell) setHealing((h) => (h?.id ? { ...h, at: cell } : h))
+    }
+    const end = () => setHealDrag(false)
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', end)
+    window.addEventListener('pointercancel', end)
+    return () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', end)
+      window.removeEventListener('pointercancel', end)
+    }
+  }, [healDrag])
+
   useFitCell(appRef, `${phase}|${healing ? 1 : 0}`)
 
   const mode = aiMode(state.ai)
@@ -760,8 +792,10 @@ export default function App() {
             ? notice
             : healing
             ? healShip
-              ? `Tap a safe spot for your ${healShip.name}.`
-              : 'Tap a hurt ship to fix it.'
+              ? healCells
+                ? `📡 Warping your ${healShip.name}… Press ✅ Relocate done, or tap another spot.`
+                : `📡 Your ${healShip.name} is back! Drag or tap it to a safe spot.`
+              : 'Tap ❤️ a hurt ship to fix it.'
             : inFlight === 'player'
               ? 'Fire! 🔥'
               : turn === 'player'
@@ -984,6 +1018,11 @@ export default function App() {
                         🔄 Turn
                       </button>
                     )}
+                    {healShip && (
+                      <button type="button" className="kit-btn relocate-done" disabled={!healCells} onClick={finishRelocate}>
+                        ✅ Relocate done
+                      </button>
+                    )}
                     <button type="button" className="kit-btn" onClick={() => setHealing(null)}>
                       ✖ Cancel
                     </button>
@@ -1010,7 +1049,15 @@ export default function App() {
             <span className="side-name">🔵 Your fleet</span>
             {phase !== 'placement' && <HealthBar value={healthOf(player)} label="Your fleet health" />}
           </h2>
-          <div className="grid-wrap">
+          <div
+            className={`grid-wrap${healShip ? ' relocating' : ''}`}
+            onPointerDown={(e) => {
+              if (!healShip || !myTurn || e.button !== 0) return
+              const cell = cellUnder(e.clientX, e.clientY)
+              if (cell) setHealing((h) => (h?.id ? { ...h, at: cell } : h))
+              setHealDrag(true)
+            }}
+          >
             <Grid
               board={player}
               label="Your board"
