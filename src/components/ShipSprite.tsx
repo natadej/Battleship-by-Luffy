@@ -5,6 +5,8 @@ interface Props {
   length: number
   orientation: Orientation
   sunk?: boolean
+  /** Ship level from the garage, painted on the hull from Lv 2. */
+  level?: number
 }
 
 const U = 100 // one cell in SVG units
@@ -87,7 +89,7 @@ function Face({ x, sunk }: { x: number; sunk?: boolean }) {
 }
 
 /** A top-down ship drawn horizontally (bow to the right) and mirrored onto the diagonal when vertical. */
-export function ShipSprite({ id, length, orientation, sunk }: Props) {
+export function ShipSprite({ id, length, orientation, sunk, level = 1 }: Props) {
   const w = length * U
   const [top, bottom] = id === 'submarine' ? [30, 70] : id === 'carrier' ? [14, 86] : [20, 80]
   const vertical = orientation === 'V'
@@ -104,6 +106,14 @@ export function ShipSprite({ id, length, orientation, sunk }: Props) {
         <Details id={id} length={length} />
         <Face x={w - 62} sunk={sunk} />
       </g>
+      {level > 1 && (
+        <g className="ship-plaque" transform={vertical ? `translate(50 ${w * 0.4})` : `translate(${w * 0.4} 50)`}>
+          <rect x={-38} y={-17} width={76} height={34} rx={8} />
+          <text y={10} textAnchor="middle">
+            Lv{level}
+          </text>
+        </g>
+      )}
     </svg>
   )
 }

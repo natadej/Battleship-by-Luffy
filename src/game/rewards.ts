@@ -1,4 +1,5 @@
 import type { Level } from './ai'
+import { type Garage, partsFor } from './garage'
 import type { Special } from './weapons'
 
 /** Everything a player has earned on this device: coins, stars, badges, skins and the daily streak. */
@@ -15,6 +16,10 @@ export interface Progress {
   bonus: Special | null
   /** The endless campaign: the mission to play next and the points banked so far. */
   run: Run
+  /** 🔩 parts for ship upgrades, the player's ships' levels and names, and ships sunk last battle awaiting repair. */
+  parts: number
+  garage: Garage
+  wrecks: string[]
 }
 
 export type Run = { mission: number; total: number; shots: number; hits: number; assisted: boolean }
@@ -39,6 +44,9 @@ export const NEW_PROGRESS: Progress = {
   daily: { last: null, streak: 0, best: 0 },
   bonus: null,
   run: NEW_RUN,
+  parts: 0,
+  garage: {},
+  wrecks: [],
 }
 
 export interface Skin {
@@ -145,6 +153,8 @@ export interface BattleResult {
   bestCombo: number
   shipsLost: number
   daily: boolean
+  /** Ids of the player's ships sunk this battle. */
+  wrecked?: string[]
 }
 
 /** Badges newly earned by a finished battle. */
@@ -162,16 +172,22 @@ export function earnedBadges(p: Progress, r: BattleResult): string[] {
 }
 
 /** Applies a finished battle: best stars, coins, daily streak and new badges. */
-export function recordBattle(p: Progress, r: BattleResult, today: string): { progress: Progress; stars: number; coins: number; badges: string[] } {
+export function recordBattle(
+  p: Progress,
+  r: BattleResult,
+  today: string,
+): { progress: Progress; stars: number; coins: number; parts: number; badges: string[] } {
   const stars = starsFor(r.won, r.accuracy)
   const firstDaily = r.daily && r.won && p.daily.last !== today
   const coins = r.daily ? (firstDaily ? DAILY_COINS : 0) : coinsFor(stars, r.level) * (r.boss && r.won ? 2 : 1)
-  let next: Progress = { ...p, coins: p.coins + coins }
+  const parts = partsFor(r.won, stars, r.level, r.boss)
+  const wrecks = [...new Set([...p.wrecks, ...(r.wrecked ?? [])])]
+  let next: Progress = { ...p, coins: p.coins + coins, parts: p.parts + parts, wrecks }
   if (!r.daily && stars > (p.stars[r.level] ?? 0)) next.stars = { ...p.stars, [r.level]: stars }
   if (r.daily && r.won) next.daily = dailyAfterWin(p.daily, today)
   const badges = earnedBadges(next, r)
   if (badges.length) next = { ...next, badges: [...next.badges, ...badges] }
-  return { progress: next, stars, coins, badges }
+  return { progress: next, stars, coins, parts, badges }
 }
 
 export function buySkin(p: Progress, id: string): Progress {
@@ -190,7 +206,7 @@ const KEY = 'battleship-progress'
 export function loadProgress(): Progress {
   try {
     const saved = JSON.parse(localStorage.getItem(KEY) ?? 'null') as Partial<Progress> | null
-    return saved ? { ...NEW_PROGRESS, ...saved, daily: { ...NEW_PROGRESS.daily, ...saved.daily }, run: { ...NEW_RUN, ...saved.run } } : NEW_PROGRESS
+    return saved ? { ...NEW_PROGRESS, ...saved, garage: { ...saved.garage }, wrecks: saved.wrecks ?? [], daily: { ...NEW_PROGRESS.daily, ...saved.daily }, run: { ...NEW_RUN, ...saved.run } } : NEW_PROGRESS
   } catch {
     return NEW_PROGRESS
   }

@@ -29,6 +29,8 @@ interface Props {
   area?: Coord[] | null
   /** The square the radio officer suggests. */
   advice?: Coord | null
+  /** Garage ship levels, shown as a plaque on each hull. */
+  levels?: Record<string, number>
 }
 
 /** Each heart's drift sideways and rise, in px. */
@@ -62,6 +64,7 @@ export function Grid({
   burst,
   area,
   advice,
+  levels,
 }: Props) {
   const visibleShips = board.ships.filter((s) => showShips === 'all' || isSunk(board, s))
   /** Armoured blocks: your own always show a 🛡; the enemy's show only once dented. */
@@ -161,7 +164,7 @@ export function Grid({
               animationDelay: `${-ship.length * 0.7}s`,
             }}
           >
-            <ShipSprite id={ship.id} length={ship.length} orientation={vertical ? 'V' : 'H'} sunk={sunk} />
+            <ShipSprite id={ship.id} length={ship.length} orientation={vertical ? 'V' : 'H'} sunk={sunk} level={levels?.[ship.id]} />
           </div>
         )
       })}
