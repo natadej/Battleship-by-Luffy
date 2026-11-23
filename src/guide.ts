@@ -14,5 +14,10 @@ export function seenTours(): Tour[] {
 
 export function markSeen(tour: Tour) {
   const seen = seenTours()
-  if (!seen.includes(tour)) localStorage.setItem(KEY, JSON.stringify([...seen, tour]))
+  if (seen.includes(tour)) return
+  try {
+    localStorage.setItem(KEY, JSON.stringify([...seen, tour]))
+  } catch {
+    // Storage full or blocked: the tour just shows again next time.
+  }
 }
