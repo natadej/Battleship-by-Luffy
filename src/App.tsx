@@ -245,6 +245,8 @@ export default function App() {
   /** Seconds left for this Blitz shot, when the shot started, and the speed bonus banked this battle. */
   const [clock, setClock] = useState(BLITZ_SECONDS)
   const blitzStart = useRef<number | null>(null)
+  /** Time already used on this shot when the guide was opened mid-turn, so closing it resumes the clock. */
+  const blitzUsed = useRef(0)
   const timedOut = useRef(false)
   const [speed, setSpeed] = useState(0)
   const [visible, setVisible] = useState(() => typeof document === 'undefined' || !document.hidden)
@@ -661,7 +663,8 @@ export default function App() {
   const clockRunning = blitz && myTurn && !healing && !queued && visible && !tour
   useEffect(() => {
     if (!clockRunning) return
-    const started = Date.now()
+    const started = Date.now() - blitzUsed.current
+    blitzUsed.current = 0
     blitzStart.current = started
     let shown = -1
     const tick = () => {
@@ -737,6 +740,11 @@ export default function App() {
     setVoiceOn(!voiceOn)
     setVoiceState(!voiceOn)
     if (!voiceOn) say('Radio check. Loud and clear!', true)
+  }
+
+  function openGuide() {
+    if (blitzStart.current !== null) blitzUsed.current = Date.now() - blitzStart.current
+    setTour(phase === 'placement' ? 'placement' : 'battle')
   }
 
   function endTour() {
@@ -949,7 +957,7 @@ export default function App() {
             </button>
           )}
           {phase !== 'over' && (
-            <button type="button" className="chip guide-btn" onClick={() => setTour(phase === 'placement' ? 'placement' : 'battle')}>
+            <button type="button" className="chip guide-btn" onClick={openGuide}>
               ❓ Guide
             </button>
           )}
