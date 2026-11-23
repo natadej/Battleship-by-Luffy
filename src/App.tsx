@@ -947,7 +947,7 @@ export default function App() {
               ⛶ Full screen
             </button>
           )}
-          {phase !== 'over' && (
+          {phase !== 'over' && !(blitz && phase === 'playing') && (
             <button type="button" className="chip guide-btn" onClick={() => setTour(phase === 'placement' ? 'placement' : 'battle')}>
               ❓ Guide
             </button>
