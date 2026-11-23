@@ -84,4 +84,12 @@ describe('points run', () => {
   it('saving a won run keeps the next mission and clears the points', () => {
     expect(bankRun({ ...run, mission: 6 })).toEqual({ ...NEW_RUN, mission: 6 })
   })
+
+  it('pays garage parts, records sunk ships as wrecks, and loads old saves without a garage', () => {
+    const a = recordBattle(NEW_PROGRESS, { ...win, accuracy: 0.7, level: 5, boss: true, wrecked: ['destroyer'] }, '2026-11-16')
+    expect(a.parts).toBe(10)
+    expect(a.progress).toMatchObject({ parts: 10, wrecks: ['destroyer'] })
+    const b = recordBattle(a.progress, { ...win, won: false, wrecked: ['destroyer', 'cruiser'] }, '2026-11-17')
+    expect(b.progress).toMatchObject({ parts: 11, wrecks: ['destroyer', 'cruiser'] })
+  })
 })

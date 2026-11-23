@@ -64,4 +64,13 @@ describe('lucky chest bonus', () => {
     expect(s.arsenal.player.nuke).toBe(3)
     expect(s.arsenal.ai.nuke).toBe(2)
   })
+
+  it('starts with the levelled player fleet and the specials its levels earn', () => {
+    const player = randomBoard(seeded(3))
+    const armed = { ...player, ships: player.ships.map((sh) => ({ ...sh, armour: sh.id === 'carrier' ? [0] : [], dented: [] })) }
+    const placed = reducer(initialState(), { type: 'setPlayerBoard', board: player })
+    const s = reducer(placed, { type: 'start', enemy: randomBoard(), level: 2, player: armed, playerBonus: { b52: 1 } })
+    expect(s.player.ships.find((sh) => sh.id === 'carrier')?.armour).toEqual([0])
+    expect(s.arsenal.player.b52).toBe(s.arsenal.ai.b52 + 1)
+  })
 })

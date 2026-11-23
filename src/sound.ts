@@ -268,6 +268,25 @@ export function playReward() {
   })
 }
 
+/** A wrench clank and a rivet ping, for a garage block upgrade. */
+export function playClank() {
+  const ac = audio()
+  if (!ac || muted) return
+  const t = ac.currentTime
+  ;[
+    [420, 0, 0.25],
+    [1250, 0.09, 0.18],
+  ].forEach(([hz, dt, peak]) => {
+    const o = ac.createOscillator()
+    o.type = 'square'
+    o.frequency.setValueAtTime(hz, t + dt)
+    o.frequency.exponentialRampToValueAtTime(hz * 0.7, t + dt + 0.15)
+    o.connect(envelope(ac, t + dt, peak, 0.18))
+    o.start(t + dt)
+    o.stop(t + dt + 0.25)
+  })
+}
+
 /** The shared context, for the background music. */
 export const audioContext = () => audio()
 

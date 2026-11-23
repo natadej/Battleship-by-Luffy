@@ -53,7 +53,17 @@ export type Action =
   | { type: 'place'; ship: ShipDef; start: Coord; orientation: Orientation }
   | { type: 'remove'; id: string }
   | { type: 'setPlayerBoard'; board: Board }
-  | { type: 'start'; enemy: Board; level: Level; crates?: GameState['crates']; bonus?: Special | null; enemyBonus?: Partial<Arsenal> }
+  | {
+      type: 'start'
+      enemy: Board
+      level: Level
+      crates?: GameState['crates']
+      bonus?: Special | null
+      enemyBonus?: Partial<Arsenal>
+      /** The player's fleet with its ship-level armour, and the specials those levels add. */
+      player?: Board
+      playerBonus?: Partial<Arsenal>
+    }
   | { type: 'playerFire'; coord: Coord; weapon?: Weapon; cells?: Coord[] }
   | { type: 'aiFire'; coord: Coord; weapon?: Weapon; cells?: Coord[] }
   | { type: 'heal'; side: Side; id: string; cells: Coord[] }
@@ -155,6 +165,7 @@ export function reducer(state: GameState, action: Action): GameState {
         ...state,
         phase: 'playing',
         enemy: action.enemy,
+        player: action.player ?? state.player,
         level: action.level,
         turn: 'player',
         again: false,
@@ -163,7 +174,7 @@ export function reducer(state: GameState, action: Action): GameState {
         dropped: !!action.crates,
         round: 0,
         arsenal: {
-          player: action.bonus ? { ...state.arsenal.player, [action.bonus]: state.arsenal.player[action.bonus] + 1 } : state.arsenal.player,
+          player: addArsenal(action.bonus ? { ...state.arsenal.player, [action.bonus]: state.arsenal.player[action.bonus] + 1 } : state.arsenal.player, action.playerBonus),
           ai: addArsenal(state.arsenal.ai, action.enemyBonus),
         },
       }

@@ -10,6 +10,7 @@ import { SeaLayer } from './components/SeaLayer'
 import { strike } from './strikes'
 import { LeaderboardDialog, LeaderboardTable } from './components/Leaderboard'
 import { LevelMap, RewardsDialog } from './components/Rewards'
+import { GarageDialog } from './components/Garage'
 import { type Advice, adviseShot } from './game/advice'
 import { LEVELS, aiMode, chooseShot } from './game/ai'
 import {
@@ -31,6 +32,7 @@ import {
 } from './game/board'
 import { BLITZ_SECONDS, loadBlitz, randomTarget, saveBlitz, secondsLeft, speedBonus } from './game/blitz'
 import { armFleet, enemyFleetLevels, fleetBonus, isBoss, tierOf } from './game/fleet'
+import { battleLevels, renameShip, repairCost, shipName, upgradeBlock } from './game/garage'
 import { fleetPlaced, initialState, reducer } from './game/game'
 import { knowledgeOf, normalize, probabilityGrid } from './game/probability'
 import { healthOf } from './game/raid'
@@ -69,7 +71,7 @@ import {
 } from './game/weapons'
 import { type ScoreEntry, flushPending, saveName, savedName, submitScore } from './leaderboard'
 import { startMusic, stopMusic } from './music'
-import { isMuted, playExplosion, playReward, playRevive, playSplash, playTick, playWarpDone, setMuted, startWarp, unlockAudio } from './sound'
+import { isMuted, playClank, playExplosion, playReward, playRevive, playSplash, playTick, playWarpDone, setMuted, startWarp, unlockAudio } from './sound'
 import { canSpeak, isVoiceOn, pick, say, setVoiceOn } from './voice'
 import './App.css'
 import type { CSSProperties } from 'react'
@@ -205,6 +207,7 @@ const PLACEMENT_TOUR: GuideStep[] = [
   { target: '.side-player .grid-wrap', icon: '🚢', title: 'Your sea', text: 'Tap your sea to put a ship there. Drag a ship to move it, and tap it to turn it.' },
   { target: '.controls .actions button', icon: '🎲', title: 'Randomize', text: 'In a hurry? Randomize hides all your ships for you.' },
   { target: '.coins-btn', icon: '🎒', title: 'Your bag', text: 'Coins and badges you win live here. Spend coins on new ship and sea colours.' },
+  { target: '.garage-btn', icon: '🔧', title: 'Garage', text: 'Win missions to earn 🔩 parts. In the garage, upgrade your ships block by block to level them up, and repair ships that sank.' },
   { target: '.blitz-btn', icon: '⏱', title: 'Blitz', text: 'Turn on Blitz for 10 seconds a shot. Fast hits earn bonus points.' },
   { target: '.start-btn', icon: '⚔️', title: 'Start the battle', text: 'When all 5 ships are on your sea, press Start battle!' },
 ]
@@ -270,6 +273,7 @@ export default function App() {
     })
   }, [])
   const [showRewards, setShowRewards] = useState(false)
+  const [showGarage, setShowGarage] = useState(false)
   const [daily, setDaily] = useState(false)
   const campaign = progress.run
   const setCampaign = (run: Run) => setProgress((p) => ({ ...p, run }))
@@ -522,11 +526,30 @@ export default function App() {
     setSelectedId(FLEET[0].id)
   }
 
+  function upgrade(id: string, block: number) {
+    const u = upgradeBlock(progress.garage, progress.parts, id, block, progress.wrecks)
+    if (!u) return
+    setProgress((p) => ({ ...p, garage: u.garage, parts: u.parts }))
+    if (u.levelled) {
+      playReward()
+      say(`${shipName(u.garage, id)} is now level ${u.garage[id]!.level}. Outstanding, Captain!`)
+    } else playClank()
+  }
+
   function start() {
     unlockAudio()
     const fleet = enemyFleetLevels(daily ? 1 : mission)
     const enemyBoard = armFleet(randomBoard(daily ? seededRng(`daily-${today}`) : Math.random), fleet, boss ? 1 : 0)
-    dispatch({ type: 'start', enemy: enemyBoard, level, bonus: progress.bonus, enemyBonus: fleetBonus(fleet) })
+    const mine = battleLevels(progress.garage, progress.wrecks)
+    dispatch({
+      type: 'start',
+      enemy: enemyBoard,
+      level,
+      bonus: progress.bonus,
+      enemyBonus: fleetBonus(fleet),
+      player: armFleet(player, mine),
+      playerBonus: fleetBonus(mine),
+    })
     if (progress.bonus) {
       const bonus = WEAPON_INFO[progress.bonus].name
       setProgress((p) => ({ ...p, bonus: null }))
@@ -588,6 +611,7 @@ export default function App() {
         bestCombo: combo.best,
         shipsLost: player.ships.filter((p) => isSunk(player, p)).length,
         daily,
+        wrecked: player.ships.filter((p) => isSunk(player, p)).map((p) => p.id),
       },
       today,
     )
@@ -999,6 +1023,9 @@ export default function App() {
             <button type="button" className="coins-btn" onClick={() => setShowRewards(true)}>
               🎒 {progress.coins} 🪙
             </button>
+            <button type="button" className={`garage-btn ${progress.wrecks.length ? 'alert' : ''}`} onClick={() => setShowGarage(true)}>
+              🔧 Garage {progress.parts} 🔩{progress.wrecks.length ? ' 💥' : ''}
+            </button>
             <button type="button" className={`daily-btn ${daily ? 'on' : ''}`} aria-pressed={daily} onClick={toggleDaily}>
               📅 Daily {liveStreak(progress.daily, today) ? `🔥${liveStreak(progress.daily, today)}` : ''}
               {progress.daily.last === today && ' ✓'}
@@ -1065,6 +1092,7 @@ export default function App() {
                 </span>
               )}
               {reward.coins > 0 && <span className="coins-won">+{reward.coins} 🪙</span>}
+              {reward.parts > 0 && <span className="coins-won">+{reward.parts} 🔩</span>}
               {combo.best >= 2 && <span>Best combo ×{combo.best}</span>}
               {reward.badges.map((id) => {
                 const b = BADGES.find((x) => x.id === id)!
@@ -1130,6 +1158,9 @@ export default function App() {
             </button>
           ) : null}
           <LeaderboardTable highlight={submitted} />
+          <button type="button" className="garage-btn" onClick={() => setShowGarage(true)}>
+            🔧 Garage: {progress.parts} 🔩{progress.wrecks.length ? ` · ${progress.wrecks.length} 💥 to repair` : ''}
+          </button>
           <button type="button" className="primary" onClick={playAgain}>
             {daily ? 'Back to the missions' : cleared ? `Next: mission ${mission + 1}${nextBoss}` : `Try mission ${mission} again`}
           </button>
@@ -1196,6 +1227,7 @@ export default function App() {
             <Grid
               board={player}
               label="Your board"
+              levels={battleLevels(progress.garage, progress.wrecks)}
               showShips="all"
               interactive={phase === 'placement' || (!!healing && myTurn)}
               preview={preview}
@@ -1230,6 +1262,7 @@ export default function App() {
               area={aim && myTurn ? aimArea(weapon, aim) : null}
               onCellHover={phase === 'playing' ? setAim : undefined}
               label="Enemy board"
+              levels={enemyFleetLevels(daily ? 1 : mission)}
               showShips={phase === 'over' ? 'all' : 'sunk'}
               variant="enemy"
               interactive={phase === 'playing'}
@@ -1288,6 +1321,20 @@ export default function App() {
       {showBoard && <LeaderboardDialog onClose={() => setShowBoard(false)} />}
       {showRewards && (
         <RewardsDialog progress={progress} today={today} onBuy={(id) => setProgress((p) => buySkin(p, id))} onClose={() => setShowRewards(false)} />
+      )}
+      {showGarage && (
+        <GarageDialog
+          progress={progress}
+          onUpgrade={upgrade}
+          onRepair={(id) =>
+            setProgress((p) => {
+              const cost = repairCost(FLEET.find((f) => f.id === id)!.length)
+              return p.coins < cost ? p : { ...p, coins: p.coins - cost, wrecks: p.wrecks.filter((w) => w !== id) }
+            })
+          }
+          onRename={(id, name) => setProgress((p) => ({ ...p, garage: renameShip(p.garage, id, name) }))}
+          onClose={() => setShowGarage(false)}
+        />
       )}
       {comboPop && (
         <div key={comboPop.key} className="combo-pop" aria-live="polite">
