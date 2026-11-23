@@ -27,6 +27,8 @@ interface Props {
   burst?: { at: Coord; key: number } | null
   /** Squares the chosen weapon will cover around the hovered square. */
   area?: Coord[] | null
+  /** The square the radio officer suggests. */
+  advice?: Coord | null
 }
 
 /** Each heart's drift sideways and rise, in px. */
@@ -59,6 +61,7 @@ export function Grid({
   crate,
   burst,
   area,
+  advice,
 }: Props) {
   const visibleShips = board.ships.filter((s) => showShips === 'all' || isSunk(board, s))
   /** Armoured blocks: your own always show a 🛡; the enemy's show only once dented. */
@@ -99,6 +102,7 @@ export function Grid({
           if (inPreview) classes.push(preview!.valid ? 'preview-ok' : 'preview-bad')
           if (isLast) classes.push('last')
           if (queued && sameCoord(queued, coord)) classes.push('queued')
+          if (!shot && advice && sameCoord(advice, coord)) classes.push('advised')
           if (!shot && area?.some((p) => sameCoord(p, coord))) classes.push('aim-area')
           const canClick = interactive && !!onCellClick
           const p = !shot && heat ? heat[r][c] : 0

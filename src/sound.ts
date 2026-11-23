@@ -271,6 +271,45 @@ export function playReward() {
 /** The shared context, for the background music. */
 export const audioContext = () => audio()
 
+/** Radio squelch: a crackle and a click when the radio opens, a two-tone "roger" beep when it closes. */
+export function playRadio(open: boolean) {
+  const ac = audio()
+  if (!ac || muted) return
+  const t = ac.currentTime
+  const src = ac.createBufferSource()
+  src.buffer = noiseBuffer(ac)
+  const bp = ac.createBiquadFilter()
+  bp.type = 'bandpass'
+  bp.frequency.value = 1800
+  bp.Q.value = 1.5
+  src.connect(bp).connect(envelope(ac, t, 0.08, open ? 0.18 : 0.12))
+  src.start(t, Math.random())
+  src.stop(t + 0.25)
+  ;(open ? [1200] : [1000, 1400]).forEach((f, i) => {
+    const at = t + (open ? 0.02 : 0.08 + i * 0.07)
+    const o = ac.createOscillator()
+    o.type = 'square'
+    o.frequency.value = f
+    o.connect(envelope(ac, at, 0.05, 0.06))
+    o.start(at)
+    o.stop(at + 0.1)
+  })
+}
+
+/** A cute rising "boop" for each step of the guide. */
+export function playBoop() {
+  const ac = audio()
+  if (!ac || muted) return
+  const t = ac.currentTime
+  const o = ac.createOscillator()
+  o.type = 'triangle'
+  o.frequency.setValueAtTime(660, t)
+  o.frequency.exponentialRampToValueAtTime(1320, t + 0.12)
+  o.connect(envelope(ac, t, 0.18, 0.22))
+  o.start(t)
+  o.stop(t + 0.3)
+}
+
 /** A short clock tick for the last seconds of a Blitz shot; `last` is the higher, final beep. */
 export function playTick(last = false) {
   const ac = audio()
