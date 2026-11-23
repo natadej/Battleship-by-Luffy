@@ -921,7 +921,7 @@ export default function App() {
                   : 'Watch out! The enemy is aiming…'
 
   return (
-    <main ref={appRef} className={`app phase-${phase} ${progress.ship} ${progress.sea}`}>
+    <main ref={appRef} className={`app phase-${phase} ${progress.ship} ${progress.sea}`} inert={tour !== null}>
       <div className="rotate-overlay" role="alertdialog" aria-label="Rotate your phone">
         <div className="rotate-phone" aria-hidden="true" />
         <p>Turn your phone sideways to play! 🔄</p>
