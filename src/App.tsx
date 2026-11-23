@@ -3,11 +3,14 @@ import { SHOT_MS } from './artillery'
 import { useFitCell } from './fit'
 import { canFullscreen, isFullscreen, isInstalled, onFullscreenChange, requestFullscreen } from './fullscreen'
 import { FleetStatus } from './components/FleetStatus'
+import { Guide, type GuideStep } from './components/Guide'
+import { type Tour, markSeen, seenTours } from './guide'
 import { Grid } from './components/Grid'
 import { SeaLayer } from './components/SeaLayer'
 import { strike } from './strikes'
 import { LeaderboardDialog, LeaderboardTable } from './components/Leaderboard'
 import { LevelMap, RewardsDialog } from './components/Rewards'
+import { type Advice, adviseShot } from './game/advice'
 import { LEVELS, aiMode, chooseShot } from './game/ai'
 import {
   type Board,
@@ -15,6 +18,7 @@ import {
   type Orientation,
   type Ship,
   FLEET,
+  ROWS,
   canPlace,
   fire,
   isSunk,
@@ -66,6 +70,7 @@ import {
 import { type ScoreEntry, flushPending, saveName, savedName, submitScore } from './leaderboard'
 import { startMusic, stopMusic } from './music'
 import { isMuted, playExplosion, playReward, playRevive, playSplash, playTick, playWarpDone, setMuted, startWarp, unlockAudio } from './sound'
+import { canSpeak, isVoiceOn, pick, say, setVoiceOn } from './voice'
 import './App.css'
 import type { CSSProperties } from 'react'
 
@@ -126,12 +131,15 @@ function ArsenalBar({
   side,
   arsenal,
   active,
+  advised,
   onPick,
   children,
 }: {
   side: 'player' | 'enemy'
   arsenal: Record<Special, number>
   active: Weapon | null
+  /** The weapon the radio officer suggests. */
+  advised?: Weapon | null
   onPick?: (w: Weapon) => void
   children?: ReactNode
 }) {
@@ -146,7 +154,7 @@ function ArsenalBar({
             role={onPick ? 'radio' : undefined}
             aria-checked={onPick ? active === w : undefined}
             aria-label={`${WEAPON_INFO[w].name}, ${left === Infinity ? 'unlimited' : `${left} left`}`}
-            className={`weapon weapon-${w} ${active === w ? 'on' : ''} ${left ? '' : 'empty'}`}
+            className={`weapon weapon-${w} ${active === w ? 'on' : ''} ${left ? '' : 'empty'} ${advised === w ? 'advised' : ''}`}
             disabled={!left || !onPick}
             title={`${WEAPON_INFO[w].name}: ${WEAPON_INFO[w].effect}`}
             onClick={() => onPick?.(w)}
@@ -171,6 +179,49 @@ const CONFETTI = Array.from({ length: 36 }, (_, i) => ({
   spin: (i % 2 ? 1 : -1) * (360 + ((i * 53) % 360)),
 }))
 
+/** Grid square read out loud, e.g. "C 7". */
+const spoken = ({ r, c }: Coord) => `${ROWS[r]} ${c + 1}`
+
+const RADIO = {
+  start: ['All hands, battle stations! Fire when ready!', 'Enemy fleet in range. Open fire!'],
+  boss: ['Warning! Boss fleet ahead! All hands, battle stations!'],
+  hit: ['Direct hit! Keep firing!', 'Target hit! Fire again, Captain!', 'Bullseye! The guns are still yours!', 'Good hit! Stay on it!'],
+  sunk: (ship: string) => [`Enemy ${ship} is going down! Outstanding!`, `Splash one ${ship}! Keep it up!`],
+  miss: ['Missed. Enemy turn, brace yourselves!', 'Splash, no hit. Hold steady!'],
+  enemyHit: ["We're hit! The enemy fires again!", 'Taking fire! Hold the line!'],
+  lost: (ship: string) => [`Mayday! We lost our ${ship}!`],
+  win: ['Mission accomplished! Outstanding work, Captain!'],
+  lose: ['We lost this one. Regroup and try again, Captain!'],
+  advice: {
+    missile: (at: string) => `Radar says ${at} is hot. Send a missile there!`,
+    nuke: (at: string) => `Captain, you still have a nuke. Drop it on ${at}!`,
+    mg: (at: string) => `Machine gun on ${at}! Finish that ship!`,
+    b52: (at: string) => `Call in the B-52 on ${at}!`,
+  } satisfies Record<Weapon, (at: string) => string>,
+}
+
+const PLACEMENT_TOUR: GuideStep[] = [
+  { icon: '⚓', title: 'Welcome aboard, Captain!', text: 'Hide your 5 ships, then sink the enemy fleet before it sinks yours.' },
+  { target: '.side-player .grid-wrap', icon: '🚢', title: 'Your sea', text: 'Tap your sea to put a ship there. Drag a ship to move it, and tap it to turn it.' },
+  { target: '.controls .actions button', icon: '🎲', title: 'Randomize', text: 'In a hurry? Randomize hides all your ships for you.' },
+  { target: '.coins-btn', icon: '🎒', title: 'Your bag', text: 'Coins and badges you win live here. Spend coins on new ship and sea colours.' },
+  { target: '.blitz-btn', icon: '⏱', title: 'Blitz', text: 'Turn on Blitz for 10 seconds a shot. Fast hits earn bonus points.' },
+  { target: '.start-btn', icon: '⚔️', title: 'Start the battle', text: 'When all 5 ships are on your sea, press Start battle!' },
+]
+
+const BATTLE_TOUR: GuideStep[] = [
+  { target: '.side-enemy .grid-wrap', icon: '🎯', title: 'Fire!', text: 'Tap the red sea to fire. A hit lets you fire again. A miss gives the enemy its turn.' },
+  ...WEAPON_ORDER.map((w) => ({
+    target: `.bar-player .weapon-${w}`,
+    icon: WEAPON_ICON[w],
+    title: WEAPON_INFO[w].name,
+    text: w === 'missile' ? 'Hits 1 square. You never run out.' : `${WEAPON_INFO[w].effect}. Tap it, then tap the red sea. You have 2.`,
+  })),
+  { target: '.edge-player', icon: '❤️', title: 'Healing box', text: 'When a box with hearts drops on the enemy sea, shoot it. Then tap Heal to fix a hurt ship and move it somewhere safe.' },
+  { target: '.shade-toggle', icon: '🔮', title: 'Hint glow', text: 'Glows where enemy ships probably hide. It halves your score, so use it wisely.' },
+  { target: '.edge-enemy', icon: '👀', title: 'Enemy weapons', text: 'These light up when the enemy fires them. Watch what it has left.' },
+  { target: '.side-player .grid-wrap', icon: '📡', title: 'Radio officer', text: 'Listen to the radio! It tells you about hits, and which leftover weapon to fire where.' },
+]
 
 export default function App() {
   const [state, dispatch] = useReducer(reducer, undefined, () => ({ ...initialState(), level: tierOf(loadProgress().run.mission) }))
@@ -194,12 +245,17 @@ export default function App() {
   /** Seconds left for this Blitz shot, when the shot started, and the speed bonus banked this battle. */
   const [clock, setClock] = useState(BLITZ_SECONDS)
   const blitzStart = useRef<number | null>(null)
+  /** Time already used on this shot when the guide was opened mid-turn, so closing it resumes the clock. */
+  const blitzUsed = useRef(0)
   const timedOut = useRef(false)
   const [speed, setSpeed] = useState(0)
   const [visible, setVisible] = useState(() => typeof document === 'undefined' || !document.hidden)
   /** Using the healing kit: the ship picked (if any), the way it will face, and the spot chosen for it. */
   const [healing, setHealing] = useState<{ id: string | null; o: Orientation; at?: Coord | null } | null>(null)
   const [healDrag, setHealDrag] = useState(false)
+  const [tour, setTour] = useState<Tour | null>(() => (seenTours().includes('placement') ? null : 'placement'))
+  const [voiceOn, setVoiceState] = useState(isVoiceOn)
+  const [advice, setAdvice] = useState<Advice | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   /** Hearts bubbling up from a healing box that just dropped or was picked up. */
   const [burst, setBurst] = useState<{ board: 'player' | 'enemy'; at: Coord; key: number } | null>(null)
@@ -291,6 +347,7 @@ export default function App() {
     dispatch({ type: 'drop', board: side, at })
     hearts(side, at)
     setNotice(side === 'enemy' ? '💝 A healing box fell into enemy waters! Shoot it to grab it!' : '💝 A healing box fell near your ships! Watch out, the enemy wants it too!')
+    say(side === 'enemy' ? `Supply drop in enemy waters at ${spoken(at)}! Shoot the healing box!` : 'Supply drop near our fleet! Protect it!', true)
   }, [hearts])
 
   useEffect(() => {
@@ -492,6 +549,9 @@ export default function App() {
     timedOut.current = false
     setAssisted(shade)
     setSubmitted(null)
+    setAdvice(null)
+    if (!seenTours().includes('battle')) setTour('battle')
+    else say(pick(boss ? RADIO.boss : RADIO.start), true)
   }
 
   const { shots: fired, hits } = state.tally.player
@@ -567,6 +627,7 @@ export default function App() {
     const secs = !blitz ? 0 : early ? BLITZ_SECONDS : blitzStart.current === null ? 0 : secondsLeft(blitzStart.current, Date.now())
     pending.current.player = coord
     setAim(null)
+    setAdvice(null)
     setInFlight('player')
     setWeapon('missile')
     await launch('player', w, coord, cells)
@@ -583,6 +644,7 @@ export default function App() {
     if (onCrate(cells, s.crates.enemy)) {
       hearts('enemy', s.crates.enemy!)
       setNotice('💖 You got the healing box! Tap ❤️ Heal to fix a ship.')
+      say('Healing kit secured! Tap Heal to fix a ship.', true)
     }
     dispatch({ type: 'playerFire', coord, weapon: w, cells })
     setInFlight(null)
@@ -598,10 +660,11 @@ export default function App() {
 
   // Blitz: the clock restarts for every shot, pauses while healing or when the game is hidden, and on
   // time-out queues a missile at a random square so the battle never gets stuck.
-  const clockRunning = blitz && myTurn && !healing && !queued && visible
+  const clockRunning = blitz && myTurn && !healing && !queued && visible && !tour
   useEffect(() => {
     if (!clockRunning) return
-    const started = Date.now()
+    const started = Date.now() - blitzUsed.current
+    blitzUsed.current = 0
     blitzStart.current = started
     let shown = -1
     const tick = () => {
@@ -628,6 +691,68 @@ export default function App() {
       setClock(BLITZ_SECONDS)
     }
   }, [clockRunning])
+
+  // The radio officer calls out each shot's result for both sides.
+  const radio = useRef({ shots: 0, aiShots: 0, enemySunk: 0, playerSunk: 0, misses: 0, chances: 0 })
+  useEffect(() => {
+    const r = radio.current
+    const shots = state.tally.player.shots
+    const aiShotsNow = state.tally.ai.shots
+    const sunkEnemy = enemy.ships.filter((p) => isSunk(enemy, p))
+    const sunkPlayer = player.ships.filter((p) => isSunk(player, p))
+    if (phase === 'playing' && shots > r.shots) {
+      if (sunkEnemy.length > r.enemySunk) say(pick(RADIO.sunk(sunkEnemy[sunkEnemy.length - 1].name)), true)
+      else if (state.again && turn === 'player') say(pick(RADIO.hit))
+      else if (!r.misses || Math.random() < 0.25) say(pick(RADIO.miss))
+      r.misses = state.again ? 0 : r.misses + 1
+    }
+    if (phase === 'playing' && aiShotsNow > r.aiShots) {
+      if (sunkPlayer.length > r.playerSunk) say(pick(RADIO.lost(sunkPlayer[sunkPlayer.length - 1].name)), true)
+      else if (state.again && turn === 'ai') say(pick(RADIO.enemyHit))
+    }
+    if (phase === 'placement') Object.assign(r, { misses: 0, chances: 0 })
+    Object.assign(r, { shots, aiShots: aiShotsNow, enemySunk: sunkEnemy.length, playerSunk: sunkPlayer.length })
+  }, [phase, turn, state.again, state.tally, enemy, player])
+
+  useEffect(() => {
+    if (phase === 'over') say(pick(winner === 'player' ? RADIO.win : RADIO.lose), true)
+  }, [phase, winner])
+
+  // While specials are left, the radio suggests the best weapon and square: after 2 misses in a row, or every 5th shot.
+  const adviceReady = myTurn && !healing && !tour && Object.values(state.arsenal.player).some((n) => n > 0)
+  useEffect(() => {
+    if (!adviceReady) return
+    const r = radio.current
+    r.chances++
+    if (r.misses < 2 && r.chances % 5 !== 0) return
+    const a = adviseShot(stateRef.current.enemy, stateRef.current.arsenal.player)
+    if (!a) return
+    const t = setTimeout(() => {
+      r.misses = 0
+      setAdvice(a)
+      setNotice(`📡 Radio: ${WEAPON_ICON[a.weapon]} ${WEAPON_INFO[a.weapon].name} on ${ROWS[a.at.r]}${a.at.c + 1}!`)
+      say(RADIO.advice[a.weapon](spoken(a.at)))
+    }, 600)
+    return () => clearTimeout(t)
+  }, [adviceReady])
+
+  function toggleVoice() {
+    setVoiceOn(!voiceOn)
+    setVoiceState(!voiceOn)
+    if (!voiceOn) say('Radio check. Loud and clear!', true)
+  }
+
+  function openGuide() {
+    if (blitzStart.current !== null) blitzUsed.current = Date.now() - blitzStart.current
+    setTour(phase === 'placement' ? 'placement' : 'battle')
+  }
+
+  function endTour() {
+    if (tour) markSeen(tour)
+    setTour(null)
+    // After the guide's own unmount cleanup has hushed its narration.
+    if (tour === 'battle') setTimeout(() => say(pick(boss ? RADIO.boss : RADIO.start), true), 300)
+  }
 
   function toggleBlitz() {
     saveBlitz(!blitz)
@@ -805,7 +930,7 @@ export default function App() {
                   : 'Watch out! The enemy is aiming…'
 
   return (
-    <main ref={appRef} className={`app phase-${phase} ${progress.ship} ${progress.sea}`}>
+    <main ref={appRef} className={`app phase-${phase} ${progress.ship} ${progress.sea}`} inert={tour !== null}>
       <div className="rotate-overlay" role="alertdialog" aria-label="Rotate your phone">
         <div className="rotate-phone" aria-hidden="true" />
         <p>Turn your phone sideways to play! 🔄</p>
@@ -829,6 +954,11 @@ export default function App() {
               onClick={canFullscreen() ? enterFullscreen : () => setFullscreenTip((t) => !t)}
             >
               ⛶ Full screen
+            </button>
+          )}
+          {phase !== 'over' && (
+            <button type="button" className="chip guide-btn" onClick={openGuide}>
+              ❓ Guide
             </button>
           )}
           <button type="button" className="chip" onClick={() => setShowBoard(true)}>
@@ -876,6 +1006,11 @@ export default function App() {
             <button type="button" className={`blitz-btn ${blitz ? 'on' : ''}`} aria-pressed={blitz} onClick={toggleBlitz}>
               ⏱ Blitz {blitz ? 'on' : 'off'}
             </button>
+            {canSpeak() && (
+              <button type="button" className={`voice-btn ${voiceOn ? 'on' : ''}`} aria-pressed={voiceOn} onClick={toggleVoice}>
+                📻 Radio voice {voiceOn ? 'on' : 'off'}
+              </button>
+            )}
           </div>
           {daily ? (
             <p className="level-hint">
@@ -1009,7 +1144,7 @@ export default function App() {
               <br />
               fire at the enemy ➜
             </span>
-            <ArsenalBar side="player" arsenal={state.arsenal.player} active={weapon} onPick={setWeapon}>
+            <ArsenalBar side="player" arsenal={state.arsenal.player} active={weapon} advised={myTurn ? advice?.weapon : null} onPick={setWeapon}>
               {state.kits.player &&
                 (healing ? (
                   <span className="kit-actions">
@@ -1099,6 +1234,7 @@ export default function App() {
               variant="enemy"
               interactive={phase === 'playing'}
               queued={queued}
+              advice={myTurn ? advice?.at : null}
               lastShot={lastPlayerShot}
               onCellClick={fireAt}
               heat={heat}
@@ -1148,6 +1284,7 @@ export default function App() {
       </section>
 
       {phase !== 'over' && <SeaLayer />}
+      {tour && <Guide key={tour} steps={tour === 'placement' ? PLACEMENT_TOUR : BATTLE_TOUR} onDone={endTour} />}
       {showBoard && <LeaderboardDialog onClose={() => setShowBoard(false)} />}
       {showRewards && (
         <RewardsDialog progress={progress} today={today} onBuy={(id) => setProgress((p) => buySkin(p, id))} onClose={() => setShowRewards(false)} />

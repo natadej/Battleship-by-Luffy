@@ -77,6 +77,7 @@ export function parseLine(line: string): ({ freq: number; steps: number } | null
   })
 }
 
+const VOLUME = 0.4
 let playing: { theme: Theme; timer: ReturnType<typeof setInterval>; gain: GainNode } | null = null
 
 export function startMusic(theme: Theme) {
@@ -89,7 +90,7 @@ export function startMusic(theme: Theme) {
   const bass = parseLine(song.bass)
   const step = 60 / song.bpm / 4
   const gain = ac.createGain()
-  gain.gain.value = 0.4
+  gain.gain.value = VOLUME
   gain.connect(ac.destination)
   const brass = ac.createBiquadFilter()
   brass.type = 'lowpass'
@@ -176,6 +177,13 @@ export function startMusic(theme: Theme) {
     }
   }, 25)
   playing = { theme, timer, gain }
+}
+
+/** Lowers the music while the radio voice speaks, so the words are clear. */
+export function duckMusic(down: boolean) {
+  if (!playing) return
+  const { gain } = playing
+  gain.gain.setTargetAtTime(down ? VOLUME * 0.3 : VOLUME, gain.context.currentTime, 0.08)
 }
 
 export function stopMusic() {
