@@ -733,7 +733,7 @@ export default function App() {
   }, [clockRunning])
 
   // The radio officer calls out each shot's result for both sides.
-  const radio = useRef({ shots: 0, aiShots: 0, enemySunk: 0, playerSunk: 0, misses: 0, chances: 0, intel: 0 })
+  const radio = useRef({ shots: 0, aiShots: 0, enemySunk: 0, playerSunk: 0, misses: 0, chances: 0, intel: 0, rolledAt: -1 })
   useEffect(() => {
     const r = radio.current
     const shots = state.tally.player.shots
@@ -750,7 +750,7 @@ export default function App() {
       if (sunkPlayer.length > r.playerSunk) say(pick(RADIO.lost(sunkPlayer[sunkPlayer.length - 1].name)), true)
       else if (state.again && turn === 'ai') say(pick(RADIO.enemyHit))
     }
-    if (phase === 'placement') Object.assign(r, { misses: 0, chances: 0, intel: 0 })
+    if (phase === 'placement') Object.assign(r, { misses: 0, chances: 0, intel: 0, rolledAt: -1 })
     Object.assign(r, { shots, aiShots: aiShotsNow, enemySunk: sunkEnemy.length, playerSunk: sunkPlayer.length })
   }, [phase, turn, state.again, state.tally, enemy, player])
 
@@ -764,6 +764,9 @@ export default function App() {
   useEffect(() => {
     if (!adviceReady) return
     const r = radio.current
+    // Once per turn: closing the guide or finishing a repair mid-turn must not roll again.
+    if (r.rolledAt === stateRef.current.tally.player.shots) return
+    r.rolledAt = stateRef.current.tally.player.shots
     r.chances++
     const specials = Object.values(stateRef.current.arsenal.player).some((n) => n > 0)
     const intel = r.chances >= 3 && r.intel < INTEL_PER_BATTLE && Math.random() < INTEL_CHANCE ? intelShot(stateRef.current.enemy) : null
