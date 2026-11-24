@@ -29,6 +29,8 @@ interface Props {
 export function GarageDialog({ progress, onUpgrade, onRepair, onRename, onClose }: Props) {
   const box = useRef<HTMLDivElement>(null)
   const [id, setId] = useState(() => progress.wrecks[0] ?? FLEET[0].id)
+  const [spent, setSpent] = useState<{ key: number; text: string } | null>(null)
+  const spend = (text: string) => setSpent((s) => ({ key: (s?.key ?? 0) + 1, text }))
   useFitZoom(box, progress)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
@@ -44,7 +46,19 @@ export function GarageDialog({ progress, onUpgrade, onRepair, onRename, onClose 
       <div ref={box} className="modal garage" role="dialog" aria-label="Garage" onClick={(e) => e.stopPropagation()}>
         <h2>
           🔧 Garage
-          <span className="parts-count">🔩 {progress.parts} parts</span>
+          <span className="garage-wallet" aria-live="polite">
+            <span key={`c${progress.coins}`} className="wallet-coins" title="Coins: repair ships">
+              🪙 {progress.coins}
+            </span>
+            <span key={`p${progress.parts}`} className="wallet-parts" title="Parts: upgrade blocks">
+              🔩 {progress.parts}
+            </span>
+            {spent && (
+              <span key={spent.key} className="wallet-spent">
+                {spent.text}
+              </span>
+            )}
+          </span>
           <button type="button" className="icon-btn" aria-label="Close" onClick={onClose}>
             ✕
           </button>
@@ -83,7 +97,10 @@ export function GarageDialog({ progress, onUpgrade, onRepair, onRename, onClose 
                   className={`garage-block ${done ? 'done' : ''}`}
                   aria-label={`Block ${b + 1}${done ? ', upgraded' : `, upgrade for ${cost} parts`}`}
                   disabled={wreck || done || progress.parts < cost}
-                  onClick={() => onUpgrade(id, b)}
+                  onClick={() => {
+                    onUpgrade(id, b)
+                    spend(`−${cost} 🔩`)
+                  }}
                 >
                   {done ? '🔩' : '+'}
                 </button>
@@ -94,10 +111,21 @@ export function GarageDialog({ progress, onUpgrade, onRepair, onRename, onClose 
         {wreck ? (
           <p className="garage-note">
             💥 Sunk in your last battle. Until it's repaired it fights at Lv 1 and can't be upgraded.{' '}
-            <button type="button" className="primary repair-btn" disabled={progress.coins < repairCost(def.length)} onClick={() => onRepair(id)}>
-              🔧 Repair for {repairCost(def.length)} 🪙
+            <button
+              type="button"
+              className="primary repair-btn"
+              disabled={progress.coins < repairCost(def.length)}
+              onClick={() => {
+                onRepair(id)
+                spend(`−${repairCost(def.length)} 🪙`)
+              }}
+            >
+              🔧 Repair: {repairCost(def.length)} 🪙
             </button>
-            {progress.coins < repairCost(def.length) && ` You have ${progress.coins} 🪙.`}
+            <span className="repair-math">
+              You have {progress.coins} 🪙
+              {progress.coins >= repairCost(def.length) ? `, ${progress.coins - repairCost(def.length)} 🪙 left after.` : `: ${repairCost(def.length) - progress.coins} 🪙 short. Win missions for more.`}
+            </span>
           </p>
         ) : (
           <p className="garage-note">

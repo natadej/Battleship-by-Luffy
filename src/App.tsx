@@ -11,7 +11,7 @@ import { strike } from './strikes'
 import { LeaderboardDialog, LeaderboardTable } from './components/Leaderboard'
 import { LevelMap, RewardsDialog } from './components/Rewards'
 import { GarageDialog } from './components/Garage'
-import { type Advice, adviseShot } from './game/advice'
+import { type Advice, adviseShot, intelShot } from './game/advice'
 import { LEVELS, aiMode, chooseShot } from './game/ai'
 import {
   type Board,
@@ -184,21 +184,37 @@ const CONFETTI = Array.from({ length: 36 }, (_, i) => ({
 /** Grid square read out loud, e.g. "C 7". */
 const spoken = ({ r, c }: Coord) => `${ROWS[r]} ${c + 1}`
 
+const INTEL_PER_BATTLE = 2
+const INTEL_CHANCE = 0.15
+
 const RADIO = {
-  start: ['All hands, battle stations! Fire when ready!', 'Enemy fleet in range. Open fire!'],
-  boss: ['Warning! Boss fleet ahead! All hands, battle stations!'],
-  hit: ['Direct hit! Keep firing!', 'Target hit! Fire again, Captain!', 'Bullseye! The guns are still yours!', 'Good hit! Stay on it!'],
-  sunk: (ship: string) => [`Enemy ${ship} is going down! Outstanding!`, `Splash one ${ship}! Keep it up!`],
-  miss: ['Missed. Enemy turn, brace yourselves!', 'Splash, no hit. Hold steady!'],
-  enemyHit: ["We're hit! The enemy fires again!", 'Taking fire! Hold the line!'],
-  lost: (ship: string) => [`Mayday! We lost our ${ship}!`],
-  win: ['Mission accomplished! Outstanding work, Captain!'],
-  lose: ['We lost this one. Regroup and try again, Captain!'],
+  start: [
+    "Captain, this is Command! Enemy fleet dead ahead. Let's take them down!",
+    'All hands, battle stations! Show them what we are made of!',
+    "They don't know what's coming. Open fire, Captain!",
+  ],
+  boss: ['Warning! Boss fleet incoming! This is the big one, Captain. Give it everything!'],
+  hit: [
+    "Yes! Direct hit! Don't stop now, hit them again!",
+    'Bullseye! They felt that one! Keep firing!',
+    "That's it, Captain! You've got them, fire again!",
+    "Target hit! Stay on it, don't let them breathe!",
+  ],
+  sunk: (ship: string) => [`Enemy ${ship} is going down! Yes! Incredible shot, Captain!`, `Splash one ${ship}! Who's next?`],
+  miss: ['Missed! Brace yourselves, they are firing back!', "Just water. Shake it off, Captain, we'll get them!"],
+  enemyHit: ["We're hit! Hold on, they're firing again!", 'Taking fire! Stay strong, Captain!'],
+  lost: (ship: string) => [`Mayday! Mayday! We lost our ${ship}! Make them pay!`],
+  win: ['Mission accomplished! You were amazing out there, Captain!'],
+  lose: ["We lost this one. Breathe, regroup, and let's go again!"],
+  intel: (at: string) => [
+    `Intel just came in, Captain! Enemy ship spotted at ${at}! Fire now!`,
+    `Our scouts see a ship at ${at}! Hit it, hit it now!`,
+  ],
   advice: {
-    missile: (at: string) => `Radar says ${at} is hot. Send a missile there!`,
-    nuke: (at: string) => `Captain, you still have a nuke. Drop it on ${at}!`,
+    missile: (at: string) => `Radar says ${at} is hot! Send a missile there!`,
+    nuke: (at: string) => `Captain, you still have a nuke! Drop it on ${at}!`,
     mg: (at: string) => `Machine gun on ${at}! Finish that ship!`,
-    b52: (at: string) => `Call in the B-52 on ${at}!`,
+    b52: (at: string) => `Call in the B-52 on ${at}! Light them up!`,
   } satisfies Record<Weapon, (at: string) => string>,
 }
 
@@ -717,7 +733,7 @@ export default function App() {
   }, [clockRunning])
 
   // The radio officer calls out each shot's result for both sides.
-  const radio = useRef({ shots: 0, aiShots: 0, enemySunk: 0, playerSunk: 0, misses: 0, chances: 0 })
+  const radio = useRef({ shots: 0, aiShots: 0, enemySunk: 0, playerSunk: 0, misses: 0, chances: 0, intel: 0, rolledAt: -1 })
   useEffect(() => {
     const r = radio.current
     const shots = state.tally.player.shots
@@ -734,7 +750,7 @@ export default function App() {
       if (sunkPlayer.length > r.playerSunk) say(pick(RADIO.lost(sunkPlayer[sunkPlayer.length - 1].name)), true)
       else if (state.again && turn === 'ai') say(pick(RADIO.enemyHit))
     }
-    if (phase === 'placement') Object.assign(r, { misses: 0, chances: 0 })
+    if (phase === 'placement') Object.assign(r, { misses: 0, chances: 0, intel: 0, rolledAt: -1 })
     Object.assign(r, { shots, aiShots: aiShotsNow, enemySunk: sunkEnemy.length, playerSunk: sunkPlayer.length })
   }, [phase, turn, state.again, state.tally, enemy, player])
 
@@ -743,19 +759,29 @@ export default function App() {
   }, [phase, winner])
 
   // While specials are left, the radio suggests the best weapon and square: after 2 misses in a row, or every 5th shot.
-  const adviceReady = myTurn && !healing && !tour && Object.values(state.arsenal.player).some((n) => n > 0)
+  // Now and then (at most twice a battle, from the 3rd turn) she instead has real intel: a square where an enemy ship is.
+  const adviceReady = myTurn && !healing && !tour
   useEffect(() => {
     if (!adviceReady) return
     const r = radio.current
+    // Once per turn: closing the guide or finishing a repair mid-turn must not roll again.
+    if (r.rolledAt === stateRef.current.tally.player.shots) return
+    r.rolledAt = stateRef.current.tally.player.shots
     r.chances++
-    if (r.misses < 2 && r.chances % 5 !== 0) return
-    const a = adviseShot(stateRef.current.enemy, stateRef.current.arsenal.player)
+    const specials = Object.values(stateRef.current.arsenal.player).some((n) => n > 0)
+    const intel = r.chances >= 3 && r.intel < INTEL_PER_BATTLE && Math.random() < INTEL_CHANCE ? intelShot(stateRef.current.enemy) : null
+    const a: Advice | null = intel
+      ? { weapon: 'missile', at: intel }
+      : specials && (r.misses >= 2 || r.chances % 5 === 0)
+        ? adviseShot(stateRef.current.enemy, stateRef.current.arsenal.player)
+        : null
     if (!a) return
     const t = setTimeout(() => {
       r.misses = 0
+      if (intel) r.intel++
       setAdvice(a)
-      setNotice(`📡 Radio: ${WEAPON_ICON[a.weapon]} ${WEAPON_INFO[a.weapon].name} on ${ROWS[a.at.r]}${a.at.c + 1}!`)
-      say(RADIO.advice[a.weapon](spoken(a.at)))
+      setNotice(intel ? `🎯 Intel: enemy ship at ${ROWS[a.at.r]}${a.at.c + 1}!` : `📡 Radio: ${WEAPON_ICON[a.weapon]} ${WEAPON_INFO[a.weapon].name} on ${ROWS[a.at.r]}${a.at.c + 1}!`)
+      say(intel ? pick(RADIO.intel(spoken(a.at))) : RADIO.advice[a.weapon](spoken(a.at)), !!intel)
     }, 600)
     return () => clearTimeout(t)
   }, [adviceReady])

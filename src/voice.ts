@@ -1,4 +1,4 @@
-// The radio officer: short battlefield call-outs read by the device's own speech voice, framed by radio squelch.
+// The radio officer, a fired-up female voice: short battlefield call-outs read by the device's own speech voice, framed by radio squelch.
 import { isMuted, playRadio } from './sound'
 import { duckMusic } from './music'
 
@@ -15,12 +15,16 @@ export function setVoiceOn(value: boolean) {
   if (!value) hush()
 }
 
-/** A deep English voice if the device has one, so it sounds like a soldier on the radio. */
-function pickVoice(): SpeechSynthesisVoice | null {
-  const all = speechSynthesis.getVoices().filter((v) => /^en/i.test(v.lang))
+/** Female English voices on Apple, Android, Windows and Chrome, best-sounding first. */
+const FEMALE = /\b(female|samantha|ava|allison|susan|zoe|victoria|karen|moira|tessa|fiona|serena|kate|aria|jenny|libby|sonia|natasha|zira|hazel|catherine)\b/i
+
+/** A female English voice if the device has one; natural or enhanced ones first, then any English voice. */
+export function pickVoice(voices: SpeechSynthesisVoice[] = speechSynthesis.getVoices()): SpeechSynthesisVoice | null {
+  const all = voices.filter((v) => /^en/i.test(v.lang))
   if (!all.length) return null
-  const deep = /\b(male|daniel|fred|alex|aaron|arthur|david|george|guy|james|mark|oliver|rishi|tom)\b/i
-  return all.find((v) => deep.test(v.name) && !/female/i.test(v.name)) ?? all.find((v) => /en-(US|GB)/i.test(v.lang)) ?? all[0]
+  const female = all.filter((v) => FEMALE.test(v.name) && !/\bmale\b/i.test(v.name.replace(/female/i, '')))
+  const best = (vs: SpeechSynthesisVoice[]) => vs.find((v) => /natural|enhanced|premium|neural|google/i.test(v.name)) ?? vs[0]
+  return best(female) ?? best(all.filter((v) => /en-(US|GB|AU)/i.test(v.lang))) ?? all[0]
 }
 
 /**
@@ -38,15 +42,16 @@ export function say(text: string, urgent = false) {
   const u = new SpeechSynthesisUtterance(text)
   if (voice) u.voice = voice
   u.lang = voice?.lang ?? 'en-US'
-  u.pitch = 0.6
-  u.rate = 1.05
+  // A little faster and brighter than normal speech, urgent lines more so: an officer under fire.
+  u.pitch = urgent ? 1.2 : 1.1
+  u.rate = urgent ? 1.18 : 1.1
   const done = () => {
     duckMusic(false)
     playRadio(false)
   }
   u.onend = done
   u.onerror = () => duckMusic(false)
-  playRadio(true)
+  playRadio(true, urgent)
   duckMusic(true)
   ss.speak(u)
 }
