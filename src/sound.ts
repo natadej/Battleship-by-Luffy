@@ -291,10 +291,21 @@ export function playClank() {
 export const audioContext = () => audio()
 
 /** Radio squelch: a crackle and a click when the radio opens, a two-tone "roger" beep when it closes. */
-export function playRadio(open: boolean) {
+export function playRadio(open: boolean, urgent = false) {
   const ac = audio()
   if (!ac || muted) return
   const t = ac.currentTime
+  // An urgent call opens on a low two-hit alarm pulse, to raise the pulse before she speaks.
+  if (open && urgent)
+    [0, 0.14].forEach((dt) => {
+      const o = ac.createOscillator()
+      o.type = 'sawtooth'
+      o.frequency.setValueAtTime(180, t + dt)
+      o.frequency.exponentialRampToValueAtTime(90, t + dt + 0.12)
+      o.connect(envelope(ac, t + dt, 0.12, 0.13))
+      o.start(t + dt)
+      o.stop(t + dt + 0.15)
+    })
   const src = ac.createBufferSource()
   src.buffer = noiseBuffer(ac)
   const bp = ac.createBiquadFilter()

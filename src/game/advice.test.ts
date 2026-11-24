@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { FLEET, emptyBoard, fire, placeShip } from './board'
-import { adviseShot } from './advice'
+import { adviseShot, intelShot } from './advice'
 
 const none = { nuke: 0, mg: 0, b52: 0 }
 
@@ -28,5 +28,18 @@ describe('radio advice', () => {
     let board = emptyBoard()
     for (let r = 0; r < 10; r++) for (let c = 0; c < 10; c++) board = fire(board, { r, c }).board
     expect(adviseShot(board, { nuke: 2, mg: 2, b52: 2 })).toBeNull()
+  })
+})
+
+describe('radio intel', () => {
+  it('points at an unshot square of a ship still afloat, or nothing once all are sunk', () => {
+    let b = placeShip(emptyBoard(), FLEET[4], { r: 0, c: 0 }, 'H')!
+    b = placeShip(b, FLEET[3], { r: 5, c: 5 }, 'V')!
+    b = fire(b, { r: 0, c: 0 }).board
+    expect(intelShot(b, () => 0)).toEqual({ r: 0, c: 1 })
+    b = fire(b, { r: 0, c: 1 }).board
+    for (let i = 0; i < 6; i++) expect(intelShot(b, () => i / 6)).toMatchObject({ c: 5 })
+    for (const r of [5, 6, 7]) b = fire(b, { r, c: 5 }).board
+    expect(intelShot(b)).toBeNull()
   })
 })

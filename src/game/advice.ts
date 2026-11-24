@@ -55,3 +55,14 @@ export function adviseShot(board: Board, arsenal: Arsenal): Advice | null {
   }
   return { weapon: pick.weapon, at: pick.at }
 }
+
+/**
+ * Field intel: one real square of a still-floating enemy ship that hasn't been hit yet.
+ * Unlike `adviseShot` this peeks at the hidden fleet, so the radio only offers it a couple of times a battle.
+ */
+export function intelShot(board: Board, rng: () => number = Math.random): Coord | null {
+  const open = board.ships
+    .filter((s) => s.cells.some((p) => board.shots[p.r][p.c] !== 'hit'))
+    .flatMap((s) => s.cells.filter((p) => board.shots[p.r][p.c] === null))
+  return open.length ? open[Math.floor(rng() * open.length)] : null
+}
