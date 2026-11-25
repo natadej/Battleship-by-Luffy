@@ -7,6 +7,7 @@ import { Guide, type GuideStep } from './components/Guide'
 import { type Tour, markSeen, seenTours } from './guide'
 import { Grid } from './components/Grid'
 import { SeaLayer } from './components/SeaLayer'
+import { ArtPreview } from './components/ArtPreview'
 import { strike } from './strikes'
 import { LeaderboardDialog, LeaderboardTable } from './components/Leaderboard'
 import { LevelMap, RewardsDialog } from './components/Rewards'
@@ -992,6 +993,7 @@ export default function App() {
       </div>
 
       <header>
+        <ArtPreview />
         <h1>
           <span aria-hidden="true">⚓</span> Battleship
         </h1>
