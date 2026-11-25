@@ -1,0 +1,121 @@
+/* An isolated art-direction layer. ?art=original is the unchanged current game. */
+.art-preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 0 12px;
+  font: 700 11px/1.3 system-ui, sans-serif;
+  letter-spacing: .15em;
+  color: #17374b;
+}
+.art-preview > span { display: flex; align-items: center; gap: 9px; }
+.art-preview i { width: 4px; height: 4px; border-radius: 50%; background: currentColor; }
+.art-preview > div { display: flex; padding: 3px; gap: 3px; border: 1px solid #17374b40; border-radius: 20px; background: #fff8e9b3; }
+.art-preview a { color: #17374b; text-decoration: none; padding: 6px 13px; border-radius: 16px; letter-spacing: 0; }
+.art-preview a[aria-current] { background: #17374b; color: #fff6dc; }
+.art-preview a:focus-visible { outline: 3px solid #e77854; outline-offset: 3px; }
+.captain-art, .art-eyebrow { display: none; }
+
+html[data-art='cartoon'] {
+  --ink: #17374b;
+  --accent: #ffcf6b;
+  --blue: #157b90;
+  --red: #d76e58;
+  --panel: #fff8e9;
+  --muted: #516a73;
+  background: #0a566e;
+}
+html[data-art='cartoon'] body {
+  background: radial-gradient(ellipse at 12% -10%, #fff6d9 0, transparent 55%), linear-gradient(#cde9dd, #edf2d7 37%, #1e91a0 38%, #0a566e);
+}
+html[data-art='cartoon'] main.app {
+  --pad-l: max(24px, env(safe-area-inset-left));
+  --pad-r: max(24px, env(safe-area-inset-right));
+  padding-top: max(12px, env(safe-area-inset-top));
+}
+html[data-art='cartoon'] header { text-align: left; width: 100%; max-width: 1450px; margin: 0 auto 14px; min-height: 128px; }
+html[data-art='cartoon'] .art-eyebrow { display: block; margin: 14px 0 3px 112px; color: #35656c; font: 700 10px/1.2 system-ui, sans-serif; letter-spacing: .22em; }
+html[data-art='cartoon'] h1 { color: #17374b; font-size: 2.6rem; text-shadow: 0 2px #fff6dc; letter-spacing: -.025em; margin-left: 108px; text-transform: none; }
+html[data-art='cartoon'] .captain-art { display: block; position: absolute; left: 0; bottom: -8px; width: 106px; height: 116px; pointer-events: none; }
+html[data-art='cartoon'] .captain-art img { width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 4px 0 #17374b1a); }
+html[data-art='cartoon'] .status { margin: 5px 0 0 112px; font-size: 1rem; color: #244e58; }
+html[data-art='cartoon'] .header-actions { top: 60px; gap: 6px; }
+html[data-art='cartoon'] button:not(.cell, .garage-block) { background-image: none; border-width: 2px; border-radius: 11px; box-shadow: 0 3px 0 #17374b; }
+html[data-art='cartoon'] button:not(.cell, .garage-block):hover:not(:disabled) { box-shadow: 0 5px 0 #17374b; }
+html[data-art='cartoon'] button:not(.cell, .garage-block):active:not(:disabled) { transform: translateY(2px); box-shadow: 0 1px 0 #17374b; }
+html[data-art='cartoon'] .chip { background-color: #fff8e9; font-size: .8rem; padding: 7px 11px; }
+html[data-art='cartoon'] .controls { position: relative; z-index: 1; width: 100%; max-width: 1220px; align-self: center; background: #fff8e9; border: 2px solid #17374b; border-radius: 20px; padding: 14px 18px; margin-bottom: 18px; gap: 12px; box-shadow: 0 5px 0 #17374b; }
+html[data-art='cartoon'] .controls .actions { gap: 7px; }
+html[data-art='cartoon'] .controls button { font-size: .9rem; padding: 8px 12px; background-color: #f9f0d9; }
+html[data-art='cartoon'] .controls .start-btn { background: #ffd16d; padding: 11px 28px; animation: none; }
+html[data-art='cartoon'] .level-hint { color: #516a73; font-size: .8rem; }
+html[data-art='cartoon'] .level-map { margin: 0; }
+html[data-art='cartoon'] .island { background: #e3ede3; border-width: 2px; border-radius: 12px; min-width: 48px; padding: 4px 6px; box-shadow: 0 2px #17374b; }
+html[data-art='cartoon'] .island-here { background: #ffda8c; }
+html[data-art='cartoon'] main.app > .boards { position: relative; isolation: isolate; border-top: 3px solid #17374b; background: #0a566e url('/art/harbor.svg') center / cover no-repeat; animation: none; box-shadow: 0 -5px 0 #fff6dc; padding-top: 14px; padding-bottom: max(14px, env(safe-area-inset-bottom)); }
+html[data-art='cartoon'] .board-panel { padding: 8px 18px; }
+html[data-art='cartoon'] .side-name { border: 2px solid #fff2d2; font-size: .9rem; padding: 5px 14px; box-shadow: 0 3px 0 #17374b; }
+html[data-art='cartoon'] .side-player .side-name { background: #176e80; }
+html[data-art='cartoon'] .side-enemy .side-name { background: #b64e3a; }
+html[data-art='cartoon'] .grid { padding: 3px; border-radius: 12px; background: #104c64e8; }
+html[data-art='cartoon'] .side-player .grid { outline: 3px solid #9dd9ce; box-shadow: 0 7px 0 #103b4a; background: #165d70e8; }
+html[data-art='cartoon'] .side-enemy .grid { outline: 3px solid #eea082; box-shadow: 0 7px 0 #103b4a; background: #165568e8; }
+html[data-art='cartoon'] .cell { border-radius: 5px; background: #78c7c32b; box-shadow: inset 0 0 0 1px #b7f5e931; }
+html[data-art='cartoon'] .cell::after { border-radius: 5px; }
+html[data-art='cartoon'] .grid-head { color: #cfebe1; font-size: .68rem; text-shadow: none; }
+html[data-art='cartoon'] .ship-hull { fill: #fff3cd; stroke: #183a4a; stroke-width: 8; }
+html[data-art='cartoon'] .ship-deck { fill: #9fd9cd; }
+html[data-art='cartoon'] .ship-detail { fill: #e2a458; }
+html[data-art='cartoon'] .ship-turret { fill: #fff6de; }
+html[data-art='cartoon'] .ship-enemy .ship-hull { fill: #efab8f; }
+html[data-art='cartoon'] .ship-enemy .ship-deck { fill: #e37b60; }
+html[data-art='cartoon'] .ship-enemy .ship-detail { fill: #ffe4ad; }
+html[data-art='cartoon'] .fleet-status { color: #fff3d3; }
+html[data-art='cartoon'] .edge-bar { background: #fff4db; border: 2px solid #17374b; border-radius: 15px; padding: 9px; align-self: center; color: #17374b; }
+html[data-art='cartoon'] .edge-title { color: #17374b; }
+html[data-art='cartoon'] .weapon { background-color: #fff8e9; }
+html[data-art='cartoon'] .weapon.on { background-color: #ffd16d; }
+html[data-art='cartoon'] .modal-backdrop { background: #102f43a8; backdrop-filter: blur(7px); }
+html[data-art='cartoon'] .modal, html[data-art='cartoon'] .game-over { background: #fff7e4; border: 3px solid #17374b; border-radius: 23px; box-shadow: 0 8px 0 #17374b; }
+html[data-art='cartoon'] .modal h2 { padding-bottom: 14px; margin-bottom: 16px; border-bottom: 2px dashed #17374b33; font-size: 1.35rem; }
+html[data-art='cartoon'] .garage-bay { border-radius: 16px; background: #1d7988; box-shadow: 0 0 0 12px #1d7988; margin-top: 24px; margin-bottom: 24px; }
+html[data-art='cartoon'] .badge-grid li { border-radius: 13px; background: #f0ead9; }
+html[data-art='cartoon'] .badge-grid li.got { background: #ffe2a4; }
+html[data-art='cartoon'] .skin { background-color: #fffdf5; }
+html[data-art='cartoon'] .garage-tab.on { background-color: #ffd98b; outline: 2px solid #17374b; }
+html[data-art='cartoon'] :focus-visible { outline: 3px solid #ffcf6b; outline-offset: 3px; }
+
+@media (max-width: 1100px) {
+  html[data-art='cartoon'] .header-actions { top: 48px; }
+  html[data-art='cartoon'] .chip { font-size: .7rem; padding: 5px 7px; }
+  html[data-art='cartoon'] h1 { font-size: 2rem; }
+  html[data-art='cartoon'] .art-eyebrow { font-size: 8px; }
+}
+@media (max-width: 860px) {
+  html[data-art='cartoon'] .header-actions { position: static; margin: 8px 0 0 112px; flex-wrap: wrap; }
+  html[data-art='cartoon'] header { min-height: 0; }
+  html[data-art='cartoon'] .captain-art { bottom: 4px; }
+}
+@media (orientation: landscape) and (max-height: 520px) {
+  .art-preview { margin-bottom: 3px; font-size: 8px; }
+  .art-preview a { padding: 3px 9px; }
+  html[data-art='cartoon'] main.app { --pad-l: max(10px, env(safe-area-inset-left)); --pad-r: max(10px, env(safe-area-inset-right)); padding-top: 3px; }
+  html[data-art='cartoon'] header { margin-bottom: 5px; min-height: 0; }
+  html[data-art='cartoon'] .art-eyebrow { display: none; }
+  html[data-art='cartoon'] h1 { font-size: 1.3rem; margin-left: 52px; }
+  html[data-art='cartoon'] .captain-art { width: 48px; height: 54px; bottom: -2px; }
+  html[data-art='cartoon'] .status { font-size: .75rem; margin: 1px 0 0 55px; }
+  html[data-art='cartoon'] .header-actions { position: absolute; top: 33px; margin: 0; }
+  html[data-art='cartoon'] .controls { padding: 5px 8px; gap: 6px; margin-bottom: 8px; border-radius: 12px; }
+  html[data-art='cartoon'] .controls button { padding: 4px 7px; font-size: .7rem; }
+  html[data-art='cartoon'] .controls .start-btn { padding: 6px 12px; }
+  html[data-art='cartoon'] .level-hint { font-size: .65rem; }
+  html[data-art='cartoon'] .board-panel { padding: 4px 10px; }
+  html[data-art='cartoon'] .side-name { font-size: .7rem; padding: 2px 9px; }
+  html[data-art='cartoon'] main.app > .boards { padding-top: 4px; padding-bottom: 4px; }
+  html[data-art='cartoon'] .edge-bar { padding: 4px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-art='cartoon'] *, html[data-art='cartoon'] *::before, html[data-art='cartoon'] *::after { animation: none !important; transition: none !important; }
+}
