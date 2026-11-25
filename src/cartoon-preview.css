@@ -16,6 +16,7 @@
 .art-preview a[aria-current] { background: #17374b; color: #fff6dc; }
 .art-preview a:focus-visible { outline: 3px solid #e77854; outline-offset: 3px; }
 .captain-art, .art-eyebrow { display: none; }
+html[data-art='original'] .art-preview { justify-content: flex-start; }
 
 html[data-art='cartoon'] {
   --ink: #17374b;
@@ -115,6 +116,17 @@ html[data-art='cartoon'] :focus-visible { outline: 3px solid #ffcf6b; outline-of
   html[data-art='cartoon'] .side-name { font-size: .7rem; padding: 2px 9px; }
   html[data-art='cartoon'] main.app > .boards { padding-top: 4px; padding-bottom: 4px; }
   html[data-art='cartoon'] .edge-bar { padding: 4px; }
+  /* The base game uses a flex header on short screens. Give the art controls,
+     captain, title, actions and wrapping instructions their own non-overlapping rows. */
+  html[data-art='cartoon'] header { display: grid; grid-template-columns: 48px auto 1fr; grid-template-areas: 'preview preview preview' 'captain title actions' 'captain status status'; gap: 3px 8px; align-items: center; }
+  html[data-art='cartoon'] .art-preview { grid-area: preview; margin: 0; }
+  html[data-art='cartoon'] h1 { grid-area: title; margin: 0; white-space: nowrap; }
+  html[data-art='cartoon'] .captain-art { grid-area: captain; position: static; }
+  html[data-art='cartoon'] .header-actions { grid-area: actions; position: static; justify-self: end; }
+  html[data-art='cartoon'] .status { grid-area: status; margin: 0; }
+  html[data-art='original'] header { flex-wrap: wrap; }
+  html[data-art='original'] .art-preview { flex-basis: 100%; margin: 0; }
+  html[data-art='original'] .status { max-width: 42%; }
 }
 @media (prefers-reduced-motion: reduce) {
   html[data-art='cartoon'] *, html[data-art='cartoon'] *::before, html[data-art='cartoon'] *::after { animation: none !important; transition: none !important; }
